@@ -22,7 +22,9 @@ Forked from [foXaCe/bermuda](https://github.com/foXaCe/bermuda), which is itself
   with `learn_room` / `reset_learning` services, a training-room select and Learn/Reset buttons.
 - **Reworked device picker**: tick-box lists, devices labelled with what they are and roughly how far away, and
   hide-by-kind (for example all Apple devices at once).
-- **Calibration wizard** (distance and per-proxy offsets) in the options menu.
+- **Guided auto-calibration**: no more guessing reference power, attenuation or per-proxy offsets. Hold a phone
+  where the screen tells you, press Submit, and Bermuda measures and works out the numbers itself (see
+  [Calibrating distances](#calibrating-distances)).
 - **Bug fix**: `bermuda.set_scanner_offset` wrote to legacy options that the v2 coordinator overwrote at load.
 
 It keeps the `bermuda` domain, so it **replaces** the original rather than running beside it. Install by copying
@@ -146,17 +148,32 @@ rarely carry an exact model, so the label says only what the device really tells
 
 ## Calibrating distances
 
-Open **Calibrate distances** and follow the screens; Bermuda does the measuring.
+Bermuda turns signal strength into metres using two numbers (the signal at 1 m and how quickly it fades) plus a
+small correction for each proxy. Normally you would have to find those by trial and error. Here you don't: open
+**Calibrate distances** and Bermuda **measures them for you**, then fills them in.
 
-1. Pick the phone you'll hold (screen on).
-2. **Distance**: pick a proxy, hold the phone 1 m from it, press Submit (up to a minute; it stops sooner once it has enough readings), then hold it
-   3 m away in a straight line and press Submit. That sets how Bermuda turns signal strength into metres.
-   If a proxy can't hear the phone at 3 m, choose 2 m instead, or tick Skip to keep your current setting.
-3. **Even out a proxy** (optional, once per proxy): hold the phone 1 m from it. That corrects for proxies
-   that hear slightly louder or quieter than others.
-4. **Save and finish**. Nothing changes until you save; Discard throws the measurements away.
+- **Nothing to type.** You move a phone; it does the maths.
+- **You can see it working.** While it listens, the screen counts down and shows the readings as they arrive.
+- **It adapts to the phone.** Phones are heard only every few seconds, so it listens for up to a minute but stops
+  as soon as it has enough readings.
+- **It copes with weak proxies.** If a proxy can't hear the phone at 3 m, pick 2 m instead, or Skip that step and
+  keep your current fade rate.
+- **It tells you when a measurement is bad**, and why (too few readings, too jumpy, or the far reading wasn't
+  weaker than the near one), instead of quietly saving rubbish.
+- **Nothing changes until you press Save.** Discard throws it all away.
 
-If a measurement is too jumpy or the phone wasn't heard, it tells you why and asks you to repeat it.
+The steps:
+
+1. Pick the phone you'll hold (screen on and awake).
+2. **Distance**: pick a proxy and hold the phone 1 m from it, press Submit, then hold it 3 m away in a straight
+   line and press Submit. That sets how Bermuda turns signal strength into metres.
+3. **Even out a proxy** (optional, once per proxy): hold the phone 1 m from it. That corrects for proxies that
+   hear slightly louder or quieter than others.
+4. **Save and finish.**
+
+Tip: a phone that advertises slowly or faintly is the usual reason a proxy "barely heard" it. If you track the
+phone with the Home Assistant app's BLE Transmitter, setting its power to high and its advertise mode to low
+latency makes calibration much quicker and the readings steadier.
 
 ## Room learning (only when a device is poorly recognised)
 
