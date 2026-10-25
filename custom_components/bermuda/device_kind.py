@@ -36,6 +36,9 @@ COMPANY_SAMSUNG: Final = 0x0075
 COMPANY_GOOGLE: Final = 0x00E0
 COMPANY_AMAZON: Final = 0x0171
 
+RSSI_RIGHT_BY: Final = -55  # dBm: stronger than this and the device is right next to a proxy
+RSSI_CLOSE: Final = -75  # dBm: weaker than this and it is not meaningfully near any proxy
+
 # Apple "Continuity" message type (first byte of Apple manufacturer data) -> what is advertising.
 _APPLE_TYPES: Final[dict[int, str]] = {
     0x02: "iBeacon",
@@ -160,16 +163,18 @@ def device_room(device: BermudaDevice) -> tuple[str, str] | None:
 
 
 def signal_phrase(rssi: float | None, room: str | None) -> str:
-    """Say how strong the signal is *relative to a place*, since "far" means nothing on its own."""
+    """
+    Say where a device is, in words: "right by Study", "close to Study", or "far from everywhere".
+
+    A faint signal is not "near" anywhere, so below the cut-off no room is named at all.
+    """
     if rssi is None:
         return "no signal"
-    if rssi >= -55:
+    if rssi >= RSSI_RIGHT_BY:
         return f"right by {room}" if room else "very close"
-    if rssi >= -70:
-        return f"near {room}" if room else "near"
-    if rssi >= -85:
-        return f"far from {room}" if room else "far"
-    return f"barely reaches {room}" if room else "very weak"
+    if rssi >= RSSI_CLOSE:
+        return f"close to {room}" if room else "close"
+    return "far from everywhere"
 
 
 def identity_hint(device: BermudaDevice) -> str | None:

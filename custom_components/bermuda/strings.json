@@ -221,11 +221,12 @@
           "identify": "Identify a device",
           "tracked": "Tracked devices",
           "hidden": "Hidden devices",
-          "settings": "Settings"
+          "settings": "Settings",
+          "google": "Google tags"
         }
       },
       "enrol_private": {
-        "title": "Enrol a private device (IRK)",
+        "title": "Enrol a phone by key (advanced)",
         "description": "Track an iPhone, Apple Watch or other privacy device by its **IRK** (Identity Resolving Key). Home Assistant resolves its rotating MAC and Bermuda then tracks it automatically.\n\n**Where to find the IRK**\n- **iOS / watchOS** (needs a Mac signed into the same iCloud): open *Keychain Access* → *Local Items* → search `Bluetooth` → pick the record matching the device MAC (Settings › General › About) → *Show password* → copy the **Remote IRK** (base64).\n- **Android** (rooted): in `/data/misc/bluedroid/bt_config.conf` read `LE_LOCAL_KEY_IRK` (reverse the byte order).\n\nThe device must be nearby and advertising right now, otherwise the key is rejected.",
         "data": {
           "irk": "IRK",
@@ -258,19 +259,12 @@
           "globalopts": "Distance, tracking & learning",
           "categories": "Track whole categories",
           "area_entities": "Presence sensors",
-          "enrol_private": "Enrol an iPhone / Watch"
+          "enrol_private": "Enrol a phone by key (advanced)"
         }
       },
       "add": {
         "title": "Add devices",
-        "description": "Pick the room you are standing in. Devices are filtered to those nearest its proxies.",
-        "data": {
-          "room": "Room"
-        }
-      },
-      "add_pick": {
-        "title": "Add devices",
-        "description": "{count} nearby, strongest first. Tick to track.",
+        "description": "{count} nearby, strongest signal first. Tick to track.",
         "data": {
           "devices": "Devices"
         }
@@ -286,13 +280,6 @@
           "kinds": "Tracked devices are never hidden by kind."
         }
       },
-      "hide_room": {
-        "title": "Hide devices",
-        "description": "Pick the room you are standing in. Devices are filtered to those nearest its proxies.",
-        "data": {
-          "room": "Room"
-        }
-      },
       "hide_pick": {
         "title": "Hide devices",
         "description": "{count} nearby, strongest first. Tick to hide.",
@@ -301,13 +288,6 @@
         }
       },
       "identify": {
-        "title": "Identify a device",
-        "description": "Pick the room you are standing in. Devices are filtered to those nearest its proxies.",
-        "data": {
-          "room": "Room"
-        }
-      },
-      "identify_pick": {
         "title": "Identify a device",
         "description": "Pick one to see everything known about it.",
         "data": {
@@ -339,6 +319,10 @@
         "data": {
           "track_categories": "Categories"
         }
+      },
+      "google": {
+        "title": "Google tags",
+        "description": "Google Find Hub tags (Pixel Buds, Chipolo, Pebblebee...) change their Bluetooth address every ~15 minutes, so Bermuda needs your Google keys to recognise them. **No rooting is needed**: that note on the *Enrol a phone by key* screen is for something else.\\n\\n{status}\\n\\n**How to connect**\\n1. Install **Google Find My Device** from HACS (BSkando/GoogleFindMy-HA).\\n2. On a computer with Chrome, **on your home network**, run that integration's login helper and sign in with the Google account that owns your tags. (See *Authentication Part 1* in its README: the Docker helper or `python main.py`.) This creates a file called `secrets.json`.\\n3. [Add the integration](/config/integrations/dashboard/add?domain=googlefindmy) in Home Assistant, paste the contents of `secrets.json`, then restart Home Assistant.\\n4. Come back to this screen: your tags are listed here once Bermuda has heard them."
       }
     }
   },

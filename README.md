@@ -71,10 +71,17 @@ Google Find Hub trackers (Pixel/Android phones, Chipolo, Pebblebee, Moto Tag and
 "Works with Find Hub" tags) change their Bluetooth address about every 17 minutes, which
 normally makes them untrackable. This fork recognises them anyway.
 
-Bermuda does **not** log into Google itself. Install
-[GoogleFindMy-HA](https://github.com/BSkando/GoogleFindMy-HA) (v1.7.0-3 or later) and sign in
-there: it holds the Google account and the keys that let a tag's rotating identifier be
-recognised. Bermuda then asks it "whose tag is this?" for every Find Hub advert it hears.
+Bermuda does **not** log into Google itself. It uses
+[GoogleFindMy-HA](https://github.com/BSkando/GoogleFindMy-HA) (v1.7.0-3 or later), which holds your
+Google account and the keys that let a tag's rotating identifier be recognised. **No rooting is needed**
+(the rooted-Android note on the "Enrol a phone by key" screen is for a different feature). To connect:
+
+1. Install **Google Find My Device** from HACS (BSkando/GoogleFindMy-HA).
+2. On a computer with Chrome, **on your home network** (Google ties the keys to your internet address),
+   run its login helper and sign in with the Google account that owns your tags: the Docker helper or
+   `python main.py`, see "Authentication Part 1" in its README. This creates a `secrets.json` file.
+3. Add the integration in Home Assistant, paste the contents of `secrets.json`, and restart Home Assistant.
+4. In Bermuda's options, **Google tags** shows whether it's connected and lists your tags once heard.
 
 - Each tag becomes **one stable Bermuda device** (`fmdn:<id>`), however often its MAC changes.
   Its Bermuda sensors appear on the same device card as GoogleFindMy-HA's entities.
@@ -93,19 +100,19 @@ recognised. Bermuda then asks it "whose tag is this?" for every Find Hub advert 
 In a flat or a street, a Bluetooth scan shows dozens of devices that aren't yours. The options menu is
 now a short list, and each job has its own screen with tick boxes:
 
-- **Add devices**: pick the room you're standing in ("Living room (7)"), then tick from the devices
-  nearest that room's proxies. Strongest signal first, so yours are at the top.
+- **Add devices**: tick from the nearby devices, strongest signal first, so yours are at the top.
 - **Hide devices**: tick whole *kinds* ("Apple device (30)") to hide every device of that kind at
   once, or choose to pick individual devices too. Hidden devices vanish from every list and are never
   auto-tracked. Devices you track by hand are never hidden by kind.
 - **Identify a device**: pick one and see everything Bermuda knows: company id, service ids, the raw
   data, and which proxies hear it at what strength. Useful when a label says "Unidentified device".
+- **Google tags**: whether your Google sign-in is connected, which tags Bermuda knows, and the steps to connect.
 - **Tracked devices** / **Hidden devices**: tick boxes for everything you've chosen; untick to undo.
 - **Settings**: calibration and learning, track whole categories, presence sensors, enrol an iPhone/Watch.
 
 Each device is labelled with what it is ("Windows PC / Microsoft device", "AirPods / Beats earbuds",
-"Heart-rate monitor"), its name if it has one, and **where it is loudest**, for example *"near Study"*
-or *"far from Living room"*, since signal strength only means something relative to a place. Unidentified
+"Heart-rate monitor"), its name if it has one, and how close it is: *"right by Study"*, *"close to
+Living room"*, or *"far from everywhere"* when no proxy hears it strongly. Unidentified
 devices show raw clues you can search for, like `company 0x04F2` or `service 0xFE9F`. Bluetooth adverts
 rarely carry an exact model, so the label says only what the device really tells us.
 

@@ -122,12 +122,13 @@ def test_falls_back_to_the_company_then_to_unidentified():
     ("rssi", "with_room", "without_room"),
     [
         (-50, "right by Study", "very close"),
-        (-65, "near Study", "near"),
-        (-80, "far from Study", "far"),
-        (-95, "barely reaches Study", "very weak"),
+        (-65, "close to Study", "close"),
+        (-75, "close to Study", "close"),
+        (-80, "far from everywhere", "far from everywhere"),
+        (-95, "far from everywhere", "far from everywhere"),
     ],
 )
-def test_signal_phrase_names_the_place_it_is_relative_to(rssi, with_room, without_room):
+def test_signal_phrase_says_close_to_a_room_or_far_from_everywhere(rssi, with_room, without_room):
     assert signal_phrase(rssi, "Study") == with_room
     assert signal_phrase(rssi, None) == without_room
     assert signal_phrase(None, "Study") == "no signal"
@@ -181,19 +182,20 @@ async def _neighbourhood(entry):
     return coordinator, pc, gadget, apples
 
 
-async def test_label_says_what_it_is_its_name_and_where_it_is_loudest(hass, setup_bermuda_entry):
+async def test_label_says_what_it_is_its_name_and_how_close_it_is(hass, setup_bermuda_entry):
     _coordinator, pc, _gadget, apples = await _neighbourhood(setup_bermuda_entry)
     assert device_label(pc) == 'Windows PC / Microsoft device · "My PC" · right by Study · …DD:EE:11'
     assert device_room(pc) == ("study", "Study")
     assert strongest_rssi(pc) == -45
-    assert device_label(apples[1]) == "Apple device (iPhone, iPad, Mac or Watch) · far from Living room · …00:00:01"
+    assert device_label(apples[1]) == "Apple device (iPhone, iPad, Mac or Watch) · close to Living room · …00:00:01"
+    assert device_label(apples[0]).endswith("far from everywhere · …00:00:00")
 
 
 async def test_unidentified_devices_carry_raw_clues_in_their_label(hass, setup_bermuda_entry):
     _coordinator, _pc, gadget, _apples = await _neighbourhood(setup_bermuda_entry)
     assert device_kind(gadget) == "Unidentified device"
     assert identity_hint(gadget) == "company 0x04F2"
-    assert device_label(gadget) == "Unidentified device · company 0x04F2 · far from Bedroom · …DD:EE:22"
+    assert device_label(gadget) == "Unidentified device · company 0x04F2 · far from everywhere · …DD:EE:22"
 
 
 async def test_hint_uses_a_service_id_when_there_is_no_company_id(hass, setup_bermuda_entry):
@@ -324,33 +326,14 @@ async def _submit(hass, result, **fields):
 
 async def test_main_menu_is_short_and_settings_hold_the_rest(hass, setup_bermuda_entry):
     result = await _menu(hass, setup_bermuda_entry)
-    assert result["menu_options"] == ["add", "hide", "identify", "tracked", "hidden", "settings"]
+    assert result["menu_options"] == ["add", "hide", "identify", "tracked", "hidden", "google", "settings"]
     result = await _menu(hass, setup_bermuda_entry, "settings")
     assert result["menu_options"] == ["globalopts", "categories", "area_entities", "enrol_private"]
 
 
-async def test_add_asks_which_room_you_are_near_and_filters_by_it(hass, setup_bermuda_entry):
+async def test_add_lists_strongest_first_with_tick_boxes_and_adds_what_is_ticked(hass, setup_bermuda_entry):
     result = await _menu(hass, setup_bermuda_entry, "add")
-    assert result["step_id"] == "add"
-    assert _options(result, "room") == [
-        ("__anywhere__", "Anywhere (5)"),
-        ("living", "Living room (3)"),
-        ("study", "Study (1)"),
-        ("bedroom", "Bedroom (1)"),
-    ]
-    assert _field(result, "room")[1].config["mode"] == "list"  # radio buttons, not a dropdown
-    assert _field(result, "room")[1].config["multiple"] is False
-
-    picked = await _submit(hass, result, room="bedroom")
-    assert picked["step_id"] == "add_pick"
-    assert _values(picked, "devices") == ["AA:BB:CC:DD:EE:22"]
-    assert _field(picked, "devices")[1].config["mode"] == "list"  # tick boxes
-    assert picked["description_placeholders"] == {"count": "1"}
-
-
-async def test_add_lists_anywhere_strongest_first_and_adds_what_is_ticked(hass, setup_bermuda_entry):
-    result = await _menu(hass, setup_bermuda_entry, "add")
-    result = await _submit(hass, result, room="__anywhere__")
+    assert result["step_id"] == "add"  # straight to the list: no room question
     assert _values(result, "devices") == [  # strongest signal first
         "AA:BB:CC:DD:EE:11",
         "5A:00:00:00:00:01",
@@ -358,9 +341,12 @@ async def test_add_lists_anywhere_strongest_first_and_adds_what_is_ticked(hass, 
         "5A:00:00:00:00:02",
         "5A:00:00:00:00:00",
     ]
-    values = _values(result, "devices")
-    assert values[0] == "AA:BB:CC:DD:EE:11"  # strongest first
-    assert values[-1] == "5A:00:00:00:00:00"  # faintest last
+    assert _field(result, "devices")[1].config["mode"] == "list"  # tick boxes, not a dropdown
+    assert result["description_placeholders"] == {"count": "5"}
+    labels = dict(_options(result, "devices"))
+    assert "right by Study" in labels["AA:BB:CC:DD:EE:11"]
+    assert "close to Living room" in labels["5A:00:00:00:00:01"]
+    assert "far from everywhere" in labels["5A:00:00:00:00:00"]
 
     result = await _submit(hass, result, devices=["AA:BB:CC:DD:EE:11"])
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -368,7 +354,6 @@ async def test_add_lists_anywhere_strongest_first_and_adds_what_is_ticked(hass, 
 
     # tracked devices are no longer offered for adding, and adding never drops what was tracked
     result = await _menu(hass, setup_bermuda_entry, "add")
-    result = await _submit(hass, result, room="__anywhere__")
     assert "AA:BB:CC:DD:EE:11" not in _values(result, "devices")
     result = await _submit(hass, result, devices=["AA:BB:CC:DD:EE:22"])
     assert setup_bermuda_entry.options[CONF_DEVICES] == ["AA:BB:CC:DD:EE:11", "AA:BB:CC:DD:EE:22"]
@@ -384,7 +369,6 @@ async def test_pickers_skip_proxies_private_devices_and_long_gone_random_macs(ha
     beacon = coordinator._get_or_create_device("AA:BB:CC:DD:EE:41")
     beacon.address_type = ADDR_TYPE_IBEACON
     result = await _menu(hass, setup_bermuda_entry, "add", populate=False)
-    result = await _submit(hass, result, room="__anywhere__")
     values = set(_values(result, "devices"))
     assert "AA:BB:CC:DD:EE:41" in values  # iBeacon metadevices are offered
     assert not values & {"AA:BB:CC:DD:EE:40", "5A:00:00:00:00:77", "11:11:11:11:11:11"}
@@ -400,23 +384,20 @@ async def test_hide_by_kind_hides_every_device_of_that_kind_at_once(hass, setup_
     assert setup_bermuda_entry.options[CONF_BLOCKED_KINDS] == [kind]
 
     result = await _menu(hass, setup_bermuda_entry, "add")
-    assert _options(result, "room")[0] == ("__anywhere__", "Anywhere (2)")  # the three Apples are gone
+    assert result["description_placeholders"] == {"count": "2"}  # the three Apples are gone
     result = await _menu(hass, setup_bermuda_entry, "hide")
     assert kind not in _values(result, "kinds")
 
 
-async def test_hide_individually_goes_through_room_then_list(hass, setup_bermuda_entry):
+async def test_hide_individually_goes_to_a_tick_list(hass, setup_bermuda_entry):
     result = await _menu(hass, setup_bermuda_entry, "hide")
     result = await _submit(hass, result, kinds=[], individually=True)
-    assert result["step_id"] == "hide_room"
-    result = await _submit(hass, result, room="living")
     assert result["step_id"] == "hide_pick"
-    assert _values(result, "devices") == ["5A:00:00:00:00:01", "5A:00:00:00:00:02", "5A:00:00:00:00:00"]
+    assert _values(result, "devices")[:2] == ["AA:BB:CC:DD:EE:11", "5A:00:00:00:00:01"]
     result = await _submit(hass, result, devices=["5A:00:00:00:00:01"])
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert setup_bermuda_entry.options[CONF_BLOCKED_DEVICES] == ["5A:00:00:00:00:01"]
     result = await _menu(hass, setup_bermuda_entry, "add")
-    result = await _submit(hass, result, room="living")
     assert "5A:00:00:00:00:01" not in _values(result, "devices")
 
 
@@ -460,9 +441,8 @@ async def test_tracked_screen_untick_stops_tracking(hass, setup_bermuda_entry):
 
 async def test_identify_shows_everything_known_about_one_device(hass, setup_bermuda_entry):
     result = await _menu(hass, setup_bermuda_entry, "identify")
-    result = await _submit(hass, result, room="bedroom")
-    assert result["step_id"] == "identify_pick"
-    assert _field(result, "devices" if False else "device")[1].config["multiple"] is False
+    assert result["step_id"] == "identify"
+    assert _field(result, "device")[1].config["multiple"] is False  # pick exactly one
     result = await _submit(hass, result, device="AA:BB:CC:DD:EE:22")
     assert result["step_id"] == "identify_detail"
     facts = result["description_placeholders"]["facts"]
@@ -477,12 +457,40 @@ async def test_identify_shows_everything_known_about_one_device(hass, setup_berm
 
 async def test_identify_copes_with_a_device_that_has_gone(hass, setup_bermuda_entry):
     result = await _menu(hass, setup_bermuda_entry, "identify")
-    result = await _submit(hass, result, room="__anywhere__")
     result = await _submit(hass, result, device="AA:BB:CC:DD:EE:22")
     flow = hass.config_entries.options._progress[result["flow_id"]]  # noqa: SLF001
     flow._identify = "FF:FF:FF:FF:FF:FF"  # noqa: SLF001
     result = await flow.async_step_identify_detail()
     assert "no longer seen" in result["description_placeholders"]["facts"]
+
+
+async def test_google_tags_screen_explains_how_to_connect_when_not_connected(hass, setup_bermuda_entry):
+    result = await _menu(hass, setup_bermuda_entry, "google")
+    assert result["step_id"] == "google"
+    assert "Not connected yet" in result["description_placeholders"]["status"]
+    back = await _submit(hass, result)
+    assert back["step_id"] == "init"
+
+
+async def test_google_tags_screen_lists_known_tags_when_connected(hass, setup_bermuda_entry):
+    from custom_components.bermuda.fmdn_resolver import FmdnTag  # noqa: PLC0415
+
+    coordinator = setup_bermuda_entry.runtime_data.coordinator
+    hass.data["googlefindmy"] = {"eid_resolver": type("R", (), {"resolve_eid": lambda self, eid: None})()}
+    result = await _menu(hass, setup_bermuda_entry, "google")
+    assert "knows of no tags yet" in result["description_placeholders"]["status"]
+
+    tag = coordinator._fmdn_get_metadevice(FmdnTag("dev1", "canon", "entry"))  # noqa: SLF001
+    tag.name = "Keys tag"
+    tag.last_seen = monotonic_time_coarse() - 30
+    other = coordinator._fmdn_get_metadevice(FmdnTag("dev2", "canon2", "entry"))  # noqa: SLF001
+    other.name = "Wallet tag"
+    other.last_seen = 0
+    result = await _menu(hass, setup_bermuda_entry, "google", populate=False)
+    status = result["description_placeholders"]["status"]
+    assert "Connected." in status
+    assert "- Keys tag: heard 30 s ago" in status
+    assert "- Wallet tag: not heard yet" in status
 
 
 async def test_categories_screen_persists_choices(hass, setup_bermuda_entry):

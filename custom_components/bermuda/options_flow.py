@@ -66,6 +66,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DISTANCE_INFINITE,
     DOMAIN,
+    METADEVICE_FMDN_DEVICE,
     NAME,
     OPT_MIN_ATTENUATION,
     OPT_MIN_DEVTRACK_TIMEOUT,
@@ -81,7 +82,7 @@ from .const import (
     SCANNER_AGE_WORRY,
     TRACK_CATEGORIES,
 )
-from .device_kind import device_facts, device_kind, device_label, device_room, strongest_rssi
+from .device_kind import device_facts, device_kind, device_label, strongest_rssi
 from .helpers import is_blocked, is_device_selectable
 from .options_text import _DESCRIPTION_TEXTS
 from .private_enrol import async_enrol_private_device
@@ -94,9 +95,6 @@ if TYPE_CHECKING:
     from .coordinator import BermudaDataUpdateCoordinator
 
 
-ANYWHERE = "__anywhere__"  # room-filter value meaning "don't filter by room"
-
-
 class BermudaOptionsFlowHandler(OptionsFlow):
     """Config flow options handler for bermuda."""
 
@@ -106,7 +104,6 @@ class BermudaOptionsFlowHandler(OptionsFlow):
         self.devices: dict[str, BermudaDevice]
         self._translations_cache: dict[str, str] | None = None
         self._options: dict[str, Any] | None = None
-        self._room = ANYWHERE  # room filter chosen on the previous screen
         self._identify = ""  # address of the device being looked at on the Identify screen
 
     @property
@@ -190,7 +187,7 @@ class BermudaOptionsFlowHandler(OptionsFlow):
         # so every menu entry is localised like the rest of the flow.
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add", "hide", "identify", "tracked", "hidden", "settings"],
+            menu_options=["add", "hide", "identify", "tracked", "hidden", "google", "settings"],
             description_placeholders=messages,
         )
 
@@ -240,53 +237,19 @@ class BermudaOptionsFlowHandler(OptionsFlow):
             SelectSelectorConfig(options=options, multiple=multiple, sort=False, mode=SelectSelectorMode.LIST)
         )
 
-    def _in_room(self, devices: list[BermudaDevice]) -> list[BermudaDevice]:
-        """Keep devices whose loudest proxy is in the room picked on the previous screen."""
-        if self._room == ANYWHERE:
-            return devices
-        return [d for d in devices if (room := device_room(d)) is not None and room[0] == self._room]
-
-    async def _step_room(self, mode: str, next_step: str, user_input: dict[str, Any] | None) -> ConfigFlowResult:
-        """
-        "Which room are you near?" - the filter shared by Add, Hide and Identify.
-
-        Signal strength only means something relative to a place, so devices are filtered by the
-        room of the proxy hearing them loudest: stand in the living room, pick it, and what
-        is left is what is physically near you.
-        """
-        if user_input is not None:
-            self._room = user_input["room"]
-            return cast("ConfigFlowResult", await getattr(self, f"async_step_{next_step}")())
-        devices = self._candidates(include_tracked=False)
-        rooms = Counter(room for d in devices if (room := device_room(d)) is not None)
-        options = [SelectOptionDict(value=ANYWHERE, label=f"Anywhere ({len(devices)})")]
-        options += [
-            SelectOptionDict(value=room_id, label=f"{name} ({count})") for (room_id, name), count in rooms.most_common()
-        ]
-        return self.async_show_form(
-            step_id=mode,
-            data_schema=vol.Schema(
-                {vol.Required("room", default=ANYWHERE): self._list_selector(options, multiple=False)}
-            ),
-        )
-
     # --- add ----------------------------------------------------------------
 
     async def async_step_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Add devices, step 1 of 2: which room are you near."""
-        return await self._step_room("add", "add_pick", user_input)
-
-    async def async_step_add_pick(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Add devices, step 2 of 2: tick the ones to track."""
+        """Add devices: tick the ones to track."""
         if user_input is not None:
             chosen = [a.upper() for a in user_input.get("devices", [])]
             current = [a.upper() for a in self.options.get(CONF_DEVICES, []) if isinstance(a, str)]
             self.options[CONF_DEVICES] = list(dict.fromkeys(current + chosen))
             return await self._update_options()
-        devices = self._in_room(self._candidates(include_tracked=False))
+        devices = self._candidates(include_tracked=False)
         options = [SelectOptionDict(value=d.address.upper(), label=device_label(d)) for d in devices]
         return self.async_show_form(
-            step_id="add_pick",
+            step_id="add",
             data_schema=vol.Schema({vol.Optional("devices", default=[]): self._list_selector(options)}),
             description_placeholders={"count": str(len(options))},
         )
@@ -303,7 +266,7 @@ class BermudaOptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             self._hide([], list(user_input.get("kinds", [])))
             if user_input.get("individually"):
-                return await self.async_step_hide_room()
+                return await self.async_step_hide_pick()
             return await self._update_options()
         kinds = Counter(device_kind(d) for d in self._candidates(include_tracked=False))
         options = [SelectOptionDict(value=kind, label=f"{kind} ({count})") for kind, count in kinds.most_common()]
@@ -317,16 +280,12 @@ class BermudaOptionsFlowHandler(OptionsFlow):
             ),
         )
 
-    async def async_step_hide_room(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Hide devices, step 2 of 3: which room are you near."""
-        return await self._step_room("hide_room", "hide_pick", user_input)
-
     async def async_step_hide_pick(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Hide devices, step 3 of 3: tick the individual devices to hide."""
+        """Hide devices, step 2 of 2: tick the individual devices to hide."""
         if user_input is not None:
             self._hide([a.upper() for a in user_input.get("devices", [])], [])
             return await self._update_options()
-        devices = self._in_room(self._candidates(include_tracked=False))
+        devices = self._candidates(include_tracked=False)
         options = [SelectOptionDict(value=d.address.upper(), label=device_label(d)) for d in devices]
         return self.async_show_form(
             step_id="hide_pick",
@@ -337,23 +296,19 @@ class BermudaOptionsFlowHandler(OptionsFlow):
     # --- identify -----------------------------------------------------------
 
     async def async_step_identify(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Identify a device, step 1 of 3: which room are you near."""
-        return await self._step_room("identify", "identify_pick", user_input)
-
-    async def async_step_identify_pick(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Identify a device, step 2 of 3: pick one."""
+        """Identify a device, step 1 of 2: pick one."""
         if user_input is not None:
             self._identify = user_input["device"]
             return await self.async_step_identify_detail()
-        devices = self._in_room(self._candidates(include_tracked=True))
+        devices = self._candidates(include_tracked=True)
         options = [SelectOptionDict(value=d.address.upper(), label=device_label(d)) for d in devices]
         return self.async_show_form(
-            step_id="identify_pick",
+            step_id="identify",
             data_schema=vol.Schema({vol.Required("device"): self._list_selector(options, multiple=False)}),
         )
 
     async def async_step_identify_detail(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Identify a device, step 3 of 3: everything Bermuda knows about it."""
+        """Identify a device, step 2 of 2: everything Bermuda knows about it."""
         if user_input is not None:
             return await self.async_step_init()
         coordinator = self.config_entry.runtime_data.coordinator
@@ -412,6 +367,35 @@ class BermudaOptionsFlowHandler(OptionsFlow):
                 }
             ),
             description_placeholders={"count": str(len(hidden_devices) + len(hidden_kinds))},
+        )
+
+    # --- google tags --------------------------------------------------------
+
+    async def async_step_google(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Google Find Hub tags: is the sign-in in place, and which tags are known."""
+        if user_input is not None:
+            return await self.async_step_init()
+        coordinator = self.config_entry.runtime_data.coordinator
+        info = coordinator.fmdn_diagnostics()
+        tags = sorted(
+            (d for d in coordinator.metadevices.values() if METADEVICE_FMDN_DEVICE in d.metadevice_type),
+            key=lambda d: d.name,
+        )
+        if not info["resolver_available"]:
+            status = "**Not connected yet.** Follow the steps below."
+        elif not tags:
+            status = "**Connected**, but it knows of no tags yet."
+        else:
+            now = monotonic_time_coarse()
+            lines = [
+                f"- {d.name}: heard {round(now - d.last_seen)} s ago" if d.last_seen else f"- {d.name}: not heard yet"
+                for d in tags
+            ]
+            status = "**Connected.** Tags:\n" + "\n".join(lines)
+        return self.async_show_form(
+            step_id="google",
+            data_schema=vol.Schema({}),
+            description_placeholders={"status": status},
         )
 
     # --- settings -----------------------------------------------------------
