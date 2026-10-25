@@ -229,7 +229,7 @@
       "no_scanners": "You need to configure some bluetooth scanners before Bermuda will have anything to work with. \nAny one of esphome bluetooth_proxy, Shelly bluetooth proxy or local bluetooth adaptor should get you started.",
       "some_active": "You have at least some active devices, this is good.",
       "unknown": "Could not enrol the device. Check the IRK and try again.",
-      "no_signal": "That proxy barely heard the phone. Wake the phone, move closer and try again.",
+      "no_signal": "That proxy heard the phone fewer than 4 times in 40 seconds. Keep the phone awake with its screen on, move closer and try again.",
       "unstable": "The signal was jumpy. Hold the phone still, away from walls and people, and try again.",
       "inconsistent": "The 3 m reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
     },

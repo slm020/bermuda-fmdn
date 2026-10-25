@@ -1,7 +1,7 @@
 """
 Tests for the guided calibration wizard and its maths.
 
-The measurement itself (listening to a phone for ~20 s) is replaced by canned readings for the
+The measurement itself (listening to a phone for ~40 s) is replaced by canned readings for the
 flow tests, and exercised separately against a fake advert feed with a short listening time.
 """
 

@@ -38,9 +38,9 @@ if TYPE_CHECKING:
 
     from . import BermudaConfigEntry
 
-MEASURE_SECONDS: Final = 20  # how long one measurement listens
+MEASURE_SECONDS: Final = 40  # how long one measurement listens
 SAMPLE_INTERVAL: Final = 0.5  # how often it checks for a new reading
-MIN_SAMPLES: Final = 6  # fewer readings than this and the proxy barely heard the phone
+MIN_SAMPLES: Final = 4  # fewer readings than this and the proxy barely heard the phone
 MAX_SPREAD_DB: Final = 8.0  # a jumpier signal than this (std dev, dB) gives a poor measurement
 FAR_METRES: Final = 3.0  # the second distance used to work out attenuation
 MIN_ATTENUATION: Final = 1.0  # outside 1..6 the two readings can't both be right

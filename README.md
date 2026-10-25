@@ -149,7 +149,7 @@ rarely carry an exact model, so the label says only what the device really tells
 Open **Calibrate distances** and follow the screens; Bermuda does the measuring.
 
 1. Pick the phone you'll hold (screen on).
-2. **Distance**: pick a proxy, hold the phone 1 m from it, press Submit (about 20 seconds), then hold it
+2. **Distance**: pick a proxy, hold the phone 1 m from it, press Submit (about 40 seconds), then hold it
    3 m away in a straight line and press Submit. That sets how Bermuda turns signal strength into metres.
 3. **Even out a proxy** (optional, once per proxy): hold the phone 1 m from it. That corrects for proxies
    that hear slightly louder or quieter than others.
