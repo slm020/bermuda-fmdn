@@ -512,3 +512,11 @@ def test_hiding_twice_does_not_duplicate_and_drops_tracking():
     assert flow._options[CONF_DEVICES] == ["AA:BB:CC:DD:EE:02"]
     assert flow._options[CONF_BLOCKED_DEVICES] == ["AA:BB:CC:DD:EE:01"]
     assert flow._options[CONF_BLOCKED_KINDS] == ["Some kind"]
+
+
+async def test_a_name_you_gave_a_device_leads_its_label(hass, setup_bermuda_entry):
+    _coordinator, _pc, gadget, _apples = await _neighbourhood(setup_bermuda_entry)
+    gadget.name_subentry = "Garage beacon"
+    assert device_label(gadget) == "Garage beacon · Unidentified device · company 0x04F2 · far from everywhere · …DD:EE:22"
+    gadget.name_by_user = "Shed tag"  # a rename in Home Assistant beats the enrolment name
+    assert device_label(gadget).startswith("Shed tag · Unidentified device")

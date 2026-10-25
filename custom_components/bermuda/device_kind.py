@@ -230,15 +230,16 @@ def identity_hint(device: BermudaDevice) -> str | None:
 
 def device_label(device: BermudaDevice) -> str:
     """
-    Short picker label: what it is, its name if it has one, how far away, end of address.
+    Short picker label: the name you gave it (if any), what it is, its broadcast name, how far away, end of address.
 
     Example: ``Windows PC / Microsoft device · "DESKTOP-1" · ~70 cm from Study · …EE:FF``.
     """
-    parts = [device_kind(device)]
+    chosen_name = device.name_by_user or device.name_subentry  # a name the user gave always leads
+    parts = [chosen_name, device_kind(device)] if chosen_name else [device_kind(device)]
     if hint := identity_hint(device):
         parts.append(hint)
     real_name = device.name_bt_local_name or device.name_bt_serviceinfo or device.name_devreg
-    if real_name:
+    if real_name and real_name != chosen_name:
         parts.append(f'"{real_name}"')
     parts.append(where_text(device))
     parts.append(f"…{device.address.upper()[-8:]}")
