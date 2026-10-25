@@ -401,7 +401,7 @@
       },
       "google": {
         "title": "Google tags",
-        "description": "Google Find Hub tags (Pixel Buds, Chipolo, Pebblebee...) change their Bluetooth address every ~15 minutes, so Bermuda needs your Google keys to recognise them. **No rooting is needed**: that note on the *Enrol a phone by key* screen is for something else.\\n\\n{status}\\n\\n**How to connect**\\n1. Install **Google Find My Device** from HACS (BSkando/GoogleFindMy-HA).\\n2. On a computer with Chrome, **on your home network**, run that integration's login helper and sign in with the Google account that owns your tags. (See *Authentication Part 1* in its README: the Docker helper or `python main.py`.) This creates a file called `secrets.json`.\\n3. [Add the integration](/config/integrations/dashboard/add?domain=googlefindmy) in Home Assistant, paste the contents of `secrets.json`, then restart Home Assistant.\\n4. Come back to this screen: your tags are listed here once Bermuda has heard them."
+        "description": "Google Find Hub tags (Pixel Buds, Chipolo, Pebblebee...) change their Bluetooth address every ~15 minutes, so Bermuda needs your Google keys to recognise them. **No rooting is needed**: that note on the *Enrol a phone by key* screen is for something else.\n\n{status}\n\n**How to connect**\n1. Install **Google Find My Device** from HACS (BSkando/GoogleFindMy-HA).\n2. On a computer with Chrome, **on your home network**, run that integration's login helper and sign in with the Google account that owns your tags. (See *Authentication Part 1* in its README: the Docker helper or `python main.py`.) This creates a file called `secrets.json`.\n3. [Add the integration](/config/integrations/dashboard/add?domain=googlefindmy) in Home Assistant, paste the contents of `secrets.json`, then restart Home Assistant.\n4. Come back to this screen: your tags are listed here once Bermuda has heard them."
       },
       "manage": {
         "title": "Manage",
@@ -413,14 +413,14 @@
       },
       "calibrate": {
         "title": "Calibrate distances",
-        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 3 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\\n\\nPick the phone you'll hold (keep its screen on).",
+        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 3 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\n\nPick the phone you'll hold (keep its screen on).",
         "data": {
           "device": "Phone"
         }
       },
       "calibrate_hub": {
         "title": "Calibrate distances",
-        "description": "{status}\\n\\nStart with **Distance**, then do each proxy you want to even out, then **Save**.",
+        "description": "{status}\n\nStart with **Distance**, then do each proxy you want to even out, then **Save**.",
         "menu_options": {
           "calibrate_distance": "Distance (1 m and 3 m)",
           "calibrate_proxy": "Even out a proxy (1 m)",
@@ -452,7 +452,7 @@
       }
     },
     "progress": {
-      "measuring": "Measuring. Keep the phone still with its screen on."
+      "measuring": "Measuring, about {left} seconds left. Keep the phone still with its screen on.\n\n{heard}"
     },
     "abort": {
       "no_devices": "No Bluetooth devices are nearby to calibrate with."

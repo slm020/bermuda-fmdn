@@ -25,6 +25,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .calibration import (
+    CHUNK_SECONDS,
     FAR_CHOICES,
     FAR_METRES,
     MEASURE_SECONDS,
@@ -83,6 +84,9 @@ class CalibrationFlowMixin(OptionsFlow):
     _cal_task: asyncio.Task[list[float]] | None = None
     _cal_error: str | None = None
     _cal_heard: str = ""
+    _cal_samples: list[float] | None = None  # readings so far in the current measurement
+    _cal_deadline: float | None = None  # monotonic time at which the current measurement ends
+    _cal_last_stamp: float = 0.0
 
     # --- helpers ------------------------------------------------------------
 
@@ -231,36 +235,59 @@ class CalibrationFlowMixin(OptionsFlow):
         )
 
     async def _measure(self) -> list[float]:
-        """Listen for MEASURE_SECONDS and collect the phone's raw signal strength as the target proxy hears it."""
+        """Listen for one chunk of the measurement and return the phone's raw signal strengths the proxy heard."""
         assert self._cal is not None  # noqa: S101
         samples: list[float] = []
-        last_stamp = 0.0
-        end = time.monotonic() + MEASURE_SECONDS
+        deadline = self._cal_deadline if self._cal_deadline is not None else time.monotonic() + MEASURE_SECONDS
+        end = min(time.monotonic() + CHUNK_SECONDS, deadline)
         while time.monotonic() < end:
             device = self._cal_coordinator.devices.get(self._cal["device"])
             advert = device.get_scanner(self._cal["target"]) if device else None
-            if advert is not None and advert.rssi is not None and advert.stamp > last_stamp:
+            if advert is not None and advert.rssi is not None and advert.stamp > self._cal_last_stamp:
                 samples.append(advert.rssi)
-                last_stamp = advert.stamp
+                self._cal_last_stamp = advert.stamp
             await asyncio.sleep(SAMPLE_INTERVAL)
         return samples
 
+    def _measure_progress_text(self) -> dict[str, str]:
+        """What the progress screen shows: time left and the readings so far."""
+        samples = self._cal_samples or []
+        left = max(0, round((self._cal_deadline or 0.0) - time.monotonic()))
+        if samples:
+            recent = ", ".join(f"{r:.0f}" for r in samples[-6:])
+            heard = f"Heard {len(samples)} so far. Latest readings (dBm): {recent}."
+        else:
+            heard = "Nothing heard yet. Is the phone awake with its screen on?"
+        return {"left": str(left), "heard": heard}
+
     async def async_step_calibrate_measure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Measure, showing a progress spinner meanwhile."""
+        """Measure in short chunks, so the progress screen can show a countdown and the readings."""
         if self._cal_task is None:
+            if self._cal_deadline is None:
+                self._cal_samples = []
+                self._cal_last_stamp = 0.0
+                self._cal_deadline = time.monotonic() + MEASURE_SECONDS
             self._cal_task = self.hass.async_create_task(self._measure())
         if not self._cal_task.done():
             return self.async_show_progress(
-                step_id="calibrate_measure", progress_action="measuring", progress_task=self._cal_task
+                step_id="calibrate_measure",
+                progress_action="measuring",
+                progress_task=self._cal_task,
+                description_placeholders=self._measure_progress_text(),
             )
+        if self._cal_samples is None:
+            self._cal_samples = []
+        self._cal_samples += self._cal_task.result()
+        self._cal_task = None
+        if self._cal_deadline is not None and time.monotonic() < self._cal_deadline:
+            return self.async_show_progress_done(next_step_id="calibrate_measure")
         return self.async_show_progress_done(next_step_id="calibrate_measured")
 
     async def async_step_calibrate_measured(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Judge the measurement and move on, or ask for it to be repeated."""
         assert self._cal is not None  # noqa: S101
-        assert self._cal_task is not None  # noqa: S101
         cal = self._cal
-        samples, self._cal_task = self._cal_task.result(), None
+        samples, self._cal_samples, self._cal_deadline = list(self._cal_samples or []), None, None
         measurement = summarise(samples)
         if measurement is None:
             self._cal_error = "no_signal"

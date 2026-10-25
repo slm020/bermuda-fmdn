@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from . import BermudaConfigEntry
 
 MEASURE_SECONDS: Final = 40  # how long one measurement listens
+CHUNK_SECONDS: Final = 5  # the progress screen refreshes this often
 SAMPLE_INTERVAL: Final = 0.5  # how often it checks for a new reading
 MIN_SAMPLES: Final = 4  # fewer readings than this and the proxy barely heard the phone
 MAX_SPREAD_DB: Final = 8.0  # a jumpier signal than this (std dev, dB) gives a poor measurement

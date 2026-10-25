@@ -8,6 +8,7 @@ flow tests, and exercised separately against a fake advert feed with a short lis
 from __future__ import annotations
 
 import asyncio
+import time
 import math
 
 import pytest
@@ -129,6 +130,7 @@ def readings(monkeypatch):
     queue: list[list[float]] = []
 
     async def fake_measure(self):
+        self._cal_deadline = 0.0  # one canned chunk is the whole measurement
         return queue.pop(0)
 
     monkeypatch.setattr(CalibrationFlowMixin, "_measure", fake_measure)
@@ -274,7 +276,7 @@ async def test_calibrate_with_no_devices_nearby_explains_itself(hass, setup_berm
 
 
 async def test_measure_collects_only_fresh_readings(hass, setup_bermuda_entry, monkeypatch):
-    monkeypatch.setattr(options_calibration, "MEASURE_SECONDS", 0.3)
+    monkeypatch.setattr(options_calibration, "CHUNK_SECONDS", 0.3)
     monkeypatch.setattr(options_calibration, "SAMPLE_INTERVAL", 0.02)
     coordinator = setup_bermuda_entry.runtime_data.coordinator
     scanner = _scanner(coordinator, "11:11:11:11:11:11", "lounge", "Lounge")
@@ -287,6 +289,7 @@ async def test_measure_collects_only_fresh_readings(hass, setup_bermuda_entry, m
     flow.hass = hass
     flow.handler = setup_bermuda_entry.entry_id
     flow._cal = {"device": phone.address, "target": scanner.address}  # noqa: SLF001
+    flow._cal_deadline = time.monotonic() + 5  # noqa: SLF001
 
     base = advert.stamp
 
@@ -331,3 +334,38 @@ async def test_far_step_can_be_skipped_keeping_the_current_fade_rate(hass, setup
     )
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert setup_bermuda_entry.options[CONF_REF_POWER] == -58.0
+
+
+async def test_progress_screen_counts_down_and_shows_the_readings(hass, setup_bermuda_entry, monkeypatch):
+    monkeypatch.setattr(options_calibration, "CHUNK_SECONDS", 0.1)
+    monkeypatch.setattr(options_calibration, "MEASURE_SECONDS", 0.35)
+    monkeypatch.setattr(options_calibration, "SAMPLE_INTERVAL", 0.02)
+    result, lounge, _kitchen = await _wizard(hass, setup_bermuda_entry)
+    phone = setup_bermuda_entry.runtime_data.coordinator.devices["aa:bb:cc:dd:ee:60"]
+    advert = phone.get_scanner(lounge.address)
+    result = await _pick(hass, result, "calibrate_distance", proxy=lounge.address)
+    base = advert.stamp
+    result = await _submit(hass, result)
+    seen: list[dict] = []
+    for i in range(1, 40):
+        if result["type"] not in (FlowResultType.SHOW_PROGRESS, FlowResultType.SHOW_PROGRESS_DONE):
+            break
+        if result["type"] is FlowResultType.SHOW_PROGRESS:
+            seen.append(result["description_placeholders"])
+        advert.rssi, advert.stamp = -60.0 - (i % 3), base + i
+        await asyncio.sleep(0.06)
+        await hass.async_block_till_done()
+        result = await hass.config_entries.options.async_configure(result["flow_id"])
+    assert seen[0]["heard"].startswith("Nothing heard yet")
+    assert any("Heard" in p["heard"] and "Latest readings (dBm)" in p["heard"] for p in seen)
+    assert all(p["left"].isdigit() for p in seen)
+
+
+def test_strings_use_real_line_breaks():
+    import json
+    from pathlib import Path
+
+    root = Path(options_calibration.__file__).parent
+    for name in ("strings.json", "translations/en.json"):
+        text = (root / name).read_text(encoding="utf-8")
+        assert "\\\\n" not in text, f"{name} has a literal backslash-n instead of a line break"
