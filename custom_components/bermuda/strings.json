@@ -220,19 +220,24 @@
           "selectdevices": "Select devices to track",
           "enrol_private": "Enrol a private device (IRK)",
           "area_entities": "Area presence entities",
-          "scan": "Scan for new devices"
+          "scan": "Scan for new devices",
+          "blocklist": "Hidden devices (neighbours')"
         }
       },
       "scan": {
         "title": "Scan for new devices",
-        "description": "{count} nearby device(s) not yet tracked, strongest signal first. Tick the ones to track — they are added to your tracked devices.",
+        "description": "{count} nearby device(s) not yet tracked, strongest signal first. The ones with the strongest signal are usually yours: try holding your phone next to a proxy and watch it jump to the top. Tick devices to track under **Devices to start tracking**, or tick a neighbour's under **Hide these devices** to stop it ever being listed again.",
         "data": {
           "add": "Devices to start tracking",
-          "refresh": "Refresh the list"
+          "refresh": "Refresh the list",
+          "hide": "Hide these devices (never show again)",
+          "hide_kinds": "Hide every device of this kind"
         },
         "data_description": {
-          "add": "Only devices that are not already tracked are listed, strongest signal (dBm) first.",
-          "refresh": "Tick this and submit to re-scan without saving — the device list refreshes."
+          "add": "Each entry shows what the device is, its name if it has one, its signal strength and how long ago it was heard.",
+          "refresh": "Tick this and submit to re-scan without saving — the device list refreshes.",
+          "hide": "For devices you know are not yours. They disappear from every list and are never auto-tracked. Undo this under Hidden devices.",
+          "hide_kinds": "Neighbours' phones change their Bluetooth address every few minutes, so hiding one address does not last. This hides every random-address device of the chosen kind (devices you track by hand are never hidden). Undo this under Hidden devices."
         }
       },
       "selectdevices": {
@@ -276,6 +281,18 @@
       "area_entities_distance": {
         "title": "Per-entity virtual distance",
         "description": "Set a virtual distance (metres) per entity — smaller wins over BLE more easily. Grouped by area:\n\n{area_summary}"
+      },
+      "blocklist": {
+        "title": "Hidden devices",
+        "description": "{count} hidden. Untick an entry and submit to show it again.",
+        "data": {
+          "devices": "Hidden devices",
+          "kinds": "Hidden kinds"
+        },
+        "data_description": {
+          "devices": "These addresses are never listed or auto-tracked.",
+          "kinds": "Random-address devices of these kinds are never listed or auto-tracked."
+        }
       }
     }
   },

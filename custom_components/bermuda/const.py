@@ -247,6 +247,8 @@ CONF_DEVICES = "configured_devices"
 # minus an explicit exclusion denylist (see BermudaDevice.category).
 CONF_TRACK_CATEGORIES = "track_categories"
 CONF_EXCLUDE_DEVICES = "exclude_devices"
+CONF_BLOCKED_DEVICES = "blocked_devices"  # addresses hidden from the pickers and from category auto-tracking
+CONF_BLOCKED_KINDS = "blocked_kinds"  # kinds whose random-address devices are hidden the same way
 
 CONF_SCANNERS = "configured_scanners"
 

@@ -10,9 +10,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .const import ADDR_TYPE_PRIVATE_BLE_DEVICE, BDADDR_TYPE_RANDOM_RESOLVABLE
+from .const import (
+    ADDR_TYPE_PRIVATE_BLE_DEVICE,
+    BDADDR_TYPE_RANDOM_RESOLVABLE,
+    CONF_BLOCKED_DEVICES,
+    CONF_BLOCKED_KINDS,
+    CONF_DEVICES,
+)
+from .device_kind import device_kind, is_random_address
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from typing import Any
+
     from .bermuda_device import BermudaDevice
 
 
@@ -27,3 +37,22 @@ def is_device_selectable(device: BermudaDevice, stale_cutoff: float) -> bool:
     if device.is_scanner or device.address_type == ADDR_TYPE_PRIVATE_BLE_DEVICE:
         return False
     return not (device.address_type == BDADDR_TYPE_RANDOM_RESOLVABLE and device.last_seen < stale_cutoff)
+
+
+def is_blocked(device: BermudaDevice, options: Mapping[str, Any]) -> bool:
+    """
+    Whether the user has hidden this device ("never show it again").
+
+    Blocked by address, or - for neighbours' phones and gadgets whose address keeps
+    changing - by *kind*: every random-address device of a hidden kind. Devices the user
+    explicitly tracks are never hidden by kind.
+    """
+    address = device.address.upper()
+    if address in {a.upper() for a in options.get(CONF_BLOCKED_DEVICES, []) if isinstance(a, str)}:
+        return True
+    kinds = options.get(CONF_BLOCKED_KINDS, [])
+    if not kinds or not is_random_address(device):
+        return False
+    if address in {a.upper() for a in options.get(CONF_DEVICES, []) if isinstance(a, str)}:
+        return False
+    return device_kind(device) in kinds

@@ -88,6 +88,22 @@ recognised. Bermuda then asks it "whose tag is this?" for every Find Hub advert 
 > This fork keeps the `bermuda` domain, so remove the upstream/foXaCe Bermuda from HACS before
 > adding this one (your settings and spots are kept; they are stored by Home Assistant, not HACS).
 
+## Finding your devices among the neighbours'
+
+In a flat or a street, a Bluetooth scan shows dozens of devices that aren't yours. In the options,
+**Scan for new devices** now lists nearby devices **strongest signal first** (yours are usually the
+closest: hold your phone next to a proxy and it jumps to the top), each labelled with what it is
+("Apple device (iPhone, iPad, Mac or Watch)", "Windows PC", "AirPods / Beats earbuds", "Heart-rate
+monitor"...), its name if it has one, signal strength with a "very close / far / very weak" hint,
+how long ago it was heard, and the end of its address. Bluetooth adverts rarely carry an exact model,
+so the label says only what the device really tells us.
+
+- **Hide these devices** removes a device from every list and from automatic tracking, for good.
+- **Hide every device of this kind** hides all *random-address* devices of that kind at once. Phones
+  change their Bluetooth address every few minutes, so hiding one address alone would not last.
+  Devices you track by hand are never hidden by kind.
+- **Hidden devices** (in the options menu) shows everything you've hidden; untick to bring it back.
+
 ## Room learning (only when a device is poorly recognised)
 
 Bermuda places devices by distance. That works for most things, but some stubborn ones keep

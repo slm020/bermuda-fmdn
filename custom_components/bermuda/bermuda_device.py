@@ -66,6 +66,7 @@ from .const import (
     MOBILITY_OPTIONS,
     VENDOR_CATEGORIES,
 )
+from .helpers import is_blocked
 from .trackers import identify_tracker, short_uuid
 from .util import mac_norm
 
@@ -468,7 +469,8 @@ class BermudaDevice(BermudaScannerDeviceMixin):
 
         addr = self.address.upper()
         if addr not in self.options.get(CONF_EXCLUDE_DEVICES, []) and (
-            addr in self.options.get(CONF_DEVICES, []) or self.category in self.options.get(CONF_TRACK_CATEGORIES, [])
+            addr in self.options.get(CONF_DEVICES, [])
+            or (self.category in self.options.get(CONF_TRACK_CATEGORIES, []) and not is_blocked(self, self.options))
         ):
             # Tracked either explicitly (configured_devices) or by category
             # (track_categories), and not on the exclusion denylist. Flag for set-up.

@@ -9,6 +9,7 @@ and pruned by ruff.
 from __future__ import annotations
 
 import contextlib
+from collections import Counter
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, cast
 
@@ -37,6 +38,8 @@ from .const import (
     CONF_AREA_ENTITY_DISTANCE,
     CONF_AREA_ENTITY_DISTANCES,
     CONF_ATTENUATION,
+    CONF_BLOCKED_DEVICES,
+    CONF_BLOCKED_KINDS,
     CONF_DEVICES,
     CONF_DEVTRACK_TIMEOUT,
     CONF_EXCLUDE_DEVICES,
@@ -78,7 +81,8 @@ from .const import (
     SCANNER_AGE_WORRY,
     TRACK_CATEGORIES,
 )
-from .helpers import is_device_selectable
+from .device_kind import device_kind, device_label, is_random_address, strongest_rssi
+from .helpers import is_blocked, is_device_selectable
 from .options_text import _DESCRIPTION_TEXTS
 from .private_enrol import async_enrol_private_device
 from .util import mac_redact
@@ -185,54 +189,90 @@ class BermudaOptionsFlowHandler(OptionsFlow):
                 "scan",
                 "globalopts",
                 "selectdevices",
+                "blocklist",
                 "enrol_private",
                 "area_entities",
             ],
             description_placeholders=messages,
         )
 
-    async def async_step_scan(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    def _nearby_devices(self, *, untracked_only: bool) -> list[BermudaDevice]:
         """
-        Simple "scan" step: pick from nearby, not-yet-tracked devices to start tracking.
+        Devices worth offering in a picker: seen recently, not hidden, strongest signal first.
 
-        A deliberately minimal alternative to the full selectdevices step: it only
-        lists devices that are NOT already tracked, strongest signal first, and
-        appends whatever you tick to the tracked list (it never removes anything).
+        Proxies, self-configuring Private BLE devices and long-gone random MACs are left out
+        (see is_device_selectable), as is anything the user has hidden. Strongest first,
+        because the things closest to a proxy are usually yours and the neighbours' are faint.
         """
         coordinator = self.config_entry.runtime_data.coordinator
+        tracked = {a.upper() for a in self.options.get(CONF_DEVICES, []) if isinstance(a, str)}
+        stale_cutoff = monotonic_time_coarse() - PICKER_STALE_AGE
+        found = [
+            device
+            for device in coordinator.devices.values()
+            if is_device_selectable(device, stale_cutoff)
+            and not is_blocked(device, self.options)
+            and not (untracked_only and (device.address.upper() in tracked or device.create_sensor))
+        ]
+
+        def _signal(device: BermudaDevice) -> float:
+            rssi = strongest_rssi(device)
+            return rssi if rssi is not None else -9999.0
+
+        found.sort(key=_signal, reverse=True)
+        return found
+
+    def _hide(self, addresses: list[str], kinds: list[str]) -> None:
+        """Add addresses and kinds to the hide lists (and drop them from tracking)."""
+        if addresses:
+            blocked = [a.upper() for a in self.options.get(CONF_BLOCKED_DEVICES, []) if isinstance(a, str)]
+            self.options[CONF_BLOCKED_DEVICES] = list(dict.fromkeys(blocked + [a.upper() for a in addresses]))
+            self.options[CONF_DEVICES] = [
+                a for a in self.options.get(CONF_DEVICES, []) if not (isinstance(a, str) and a.upper() in addresses)
+            ]
+        if kinds:
+            self.options[CONF_BLOCKED_KINDS] = list(dict.fromkeys([*self.options.get(CONF_BLOCKED_KINDS, []), *kinds]))
+
+    async def async_step_scan(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """
+        Pick from nearby, not-yet-tracked devices to start tracking, or hide the neighbours'.
+
+        Devices are listed strongest first, each as: what it is, its name (if it has one),
+        signal strength with a "very close / far" hint, how long ago it was heard, and the
+        end of its address. Anything ticked under "add" joins the tracked list; anything
+        ticked under "hide" is removed from every picker (and from automatic tracking) for
+        good, until it is un-hidden under "Hidden devices". Hiding a *kind* hides every
+        random-address device of that kind (neighbours' phones change address constantly,
+        so hiding one address alone would not last).
+        """
         if user_input is not None and not user_input.get("refresh", False):
-            # "refresh" ticked -> fall through and re-render with a fresh scan.
-            chosen = [a.upper() for a in user_input.get("add", [])]
+            hide_addresses = [a.upper() for a in user_input.get("hide", [])]
+            chosen = [a.upper() for a in user_input.get("add", []) if a.upper() not in hide_addresses]
             if chosen:
                 current = [a.upper() for a in self.options.get(CONF_DEVICES, []) if isinstance(a, str)]
                 # Append + de-duplicate while preserving order.
                 self.options[CONF_DEVICES] = list(dict.fromkeys(current + chosen))
+            self._hide(hide_addresses, list(user_input.get("hide_kinds", [])))
             return await self._update_options()
 
-        tracked = {a.upper() for a in self.options.get(CONF_DEVICES, []) if isinstance(a, str)}
-        stale_cutoff = monotonic_time_coarse() - PICKER_STALE_AGE
-        ranked: list[tuple[float, SelectOptionDict]] = []
-        for device in coordinator.devices.values():
-            addr = device.address.upper()
-            # Skip proxies, self-configuring Private BLE, stale random MACs,
-            # and anything already tracked.
-            if not is_device_selectable(device, stale_cutoff):
-                continue
-            if addr in tracked or device.create_sensor:
-                continue
-            rssi = device.area_rssi
-            manuf = f" · {device.manufacturer}" if device.manufacturer else ""
-            tracker = f"[{device.tracker_type}] " if device.tracker_type else ""
-            signal = f"{rssi:.0f}dBm" if rssi is not None else "—"
-            label = f"{tracker}{signal} · {device.name}{manuf} · {addr}"
-            ranked.append((rssi if rssi is not None else -9999.0, SelectOptionDict(value=addr, label=label)))
+        nearby = self._nearby_devices(untracked_only=True)
+        now = monotonic_time_coarse()
+        options_list = [SelectOptionDict(value=d.address.upper(), label=device_label(d, now=now)) for d in nearby]
 
-        ranked.sort(key=lambda r: r[0], reverse=True)  # strongest signal first
-        options_list = [opt for _, opt in ranked]
-        add_selector = SelectSelector(SelectSelectorConfig(options=options_list, multiple=True, sort=False))
+        # Hide-by-kind only makes sense for random-address devices (the ones that rotate).
+        kind_counts = Counter(device_kind(d) for d in nearby if is_random_address(d))
+        kind_options = [
+            SelectOptionDict(value=kind, label=f"{kind} ({count} nearby)") for kind, count in kind_counts.most_common()
+        ]
+
+        def _select(options: list[SelectOptionDict]) -> SelectSelector:
+            return SelectSelector(SelectSelectorConfig(options=options, multiple=True, sort=False))
+
         data_schema = vol.Schema(
             {
-                vol.Optional("add", default=[]): add_selector,
+                vol.Optional("add", default=[]): _select(options_list),
+                vol.Optional("hide", default=[]): _select(options_list),
+                vol.Optional("hide_kinds", default=[]): _select(kind_options),
                 # Tick + submit to re-scan without saving (the list refreshes live).
                 vol.Optional("refresh", default=False): BooleanSelector(),
             }
@@ -241,6 +281,42 @@ class BermudaOptionsFlowHandler(OptionsFlow):
             step_id="scan",
             data_schema=data_schema,
             description_placeholders={"count": str(len(options_list))},
+        )
+
+    async def async_step_blocklist(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Review everything hidden; untick an entry to un-hide it."""
+        hidden_devices = [a.upper() for a in self.options.get(CONF_BLOCKED_DEVICES, []) if isinstance(a, str)]
+        hidden_kinds = list(self.options.get(CONF_BLOCKED_KINDS, []))
+        if user_input is not None:
+            self.options[CONF_BLOCKED_DEVICES] = [a.upper() for a in user_input.get("devices", [])]
+            self.options[CONF_BLOCKED_KINDS] = list(user_input.get("kinds", []))
+            return await self._update_options()
+
+        coordinator = self.config_entry.runtime_data.coordinator
+        now = monotonic_time_coarse()
+        known = {d.address.upper(): d for d in coordinator.devices.values()}
+        device_options = [
+            SelectOptionDict(
+                value=address,
+                label=device_label(known[address], now=now) if address in known else f"{address} (not currently seen)",
+            )
+            for address in hidden_devices
+        ]
+        kind_options = [SelectOptionDict(value=kind, label=kind) for kind in hidden_kinds]
+
+        def _select(options: list[SelectOptionDict]) -> SelectSelector:
+            return SelectSelector(SelectSelectorConfig(options=options, multiple=True, sort=False))
+
+        data_schema = vol.Schema(
+            {
+                vol.Optional("devices", default=hidden_devices): _select(device_options),
+                vol.Optional("kinds", default=hidden_kinds): _select(kind_options),
+            }
+        )
+        return self.async_show_form(
+            step_id="blocklist",
+            data_schema=data_schema,
+            description_placeholders={"count": str(len(hidden_devices) + len(hidden_kinds))},
         )
 
     async def async_step_globalopts(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -339,20 +415,11 @@ class BermudaOptionsFlowHandler(OptionsFlow):
             return await self._update_options()
 
         self.devices = self.config_entry.runtime_data.coordinator.devices
-        stale_cutoff = monotonic_time_coarse() - PICKER_STALE_AGE
-        options_list: list[SelectOptionDict] = []
-        for device in self.devices.values():
-            # Scanners aren't tracked; Private BLE devices configure themselves;
-            # a random MAC unseen for too long is not useful.
-            if not is_device_selectable(device, stale_cutoff):
-                continue
-            addr = device.address.upper()
-            manuf = f" · {device.manufacturer}" if device.manufacturer else ""
-            rssi = f" · {device.area_rssi:.0f}dBm" if device.area_rssi is not None else ""
-            label = f"[{device.category}] {addr} · {device.name}{manuf}{rssi}"
-            options_list.append(SelectOptionDict(value=addr, label=label))
-
-        options_list.sort(key=lambda opt: opt["label"])
+        now = monotonic_time_coarse()
+        options_list: list[SelectOptionDict] = [
+            SelectOptionDict(value=d.address.upper(), label=device_label(d, now=now))
+            for d in self._nearby_devices(untracked_only=False)
+        ]
 
         # Keep already-configured-but-no-longer-discovered devices selectable.
         discovered = {opt["value"] for opt in options_list}
