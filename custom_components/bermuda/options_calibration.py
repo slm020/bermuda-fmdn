@@ -82,6 +82,7 @@ class CalibrationFlowMixin(OptionsFlow):
     _cal: dict[str, Any] | None = None
     _cal_task: asyncio.Task[list[float]] | None = None
     _cal_error: str | None = None
+    _cal_heard: str = ""
 
     # --- helpers ------------------------------------------------------------
 
@@ -221,6 +222,7 @@ class CalibrationFlowMixin(OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
+                "heard": self._cal_heard,
                 "instruction": (
                     f"{step} Hold the phone {where} from **{name}**, screen on and still, with nothing "
                     f"between you. Press Submit; measuring takes about {MEASURE_SECONDS} seconds."
@@ -262,6 +264,10 @@ class CalibrationFlowMixin(OptionsFlow):
         measurement = summarise(samples)
         if measurement is None:
             self._cal_error = "no_signal"
+            self._cal_heard = (
+                f"{len(samples)} time{'s' if len(samples) != 1 else ''}"
+                + (f", strongest {max(samples):.0f} dBm" if samples else "")
+            )
             return await self.async_step_calibrate_ready()
         if not is_stable(measurement):
             self._cal_error = "unstable"

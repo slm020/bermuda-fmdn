@@ -13,6 +13,7 @@ for them, so we can use them to contribute towards measurements.
 from __future__ import annotations
 
 import binascii
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from bluetooth_data_tools import monotonic_time_coarse
@@ -647,6 +648,12 @@ class BermudaDevice(BermudaScannerDeviceMixin):
                 continue
             if val is self._hascanner:
                 out[var] = val.__repr__()
+                continue
+            if val is self.area_advert:
+                out[var] = val.__repr__()  # an advert object: show who it is, not the object
+                continue
+            if val is self.area_decision_state:
+                out[var] = {k: list(v) if isinstance(v, deque) else v for k, v in vars(val).items()}
                 continue
             if val is self.adverts:
                 advertout = {}

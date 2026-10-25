@@ -734,3 +734,17 @@ def test_identify_tracker_type_leaves_none_for_plain_device(mock_coordinator):
     dev.name_bt_local_name = None
     dev.identify_tracker_type(_advert(manufacturer_data={0x00E0: b"\x01\x02"}))
     assert dev.tracker_type is None
+
+
+def test_to_dict_is_json_safe_with_area_advert_and_decision_state(mock_coordinator):
+    """dump_devices returns this to Home Assistant, so no raw objects or deques may leak out."""
+    import json
+    from collections import deque
+
+    dev = BermudaDevice(address="aa:bb:cc:dd:ee:ff", coordinator=mock_coordinator)
+    dev.area_advert = SimpleNamespace(name="advert")
+    dev.area_decision_state = SimpleNamespace(dominant_history=deque(["x", "y"], maxlen=21), weak_since=0.0)
+    out = dev.to_dict()
+    assert out["area_decision_state"] == {"dominant_history": ["x", "y"], "weak_since": 0.0}
+    assert isinstance(out["area_advert"], str)
+    json.dumps({k: v for k, v in out.items() if k in ("area_advert", "area_decision_state")})
