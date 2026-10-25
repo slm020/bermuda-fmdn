@@ -20,6 +20,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import slugify
 
+from tests.flow_helpers import goto_setting
 from custom_components.bermuda.button import BermudaLearnRoomButton, BermudaResetLearningButton
 from custom_components.bermuda.const import (
     CONF_LEARNING_ENABLED,
@@ -635,9 +636,7 @@ async def test_new_tracked_devices_get_the_learning_entities(hass, setup_bermuda
 
 async def test_options_flow_saves_learning_settings(hass, setup_bermuda_entry):
     result = await hass.config_entries.options.async_init(setup_bermuda_entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={"next_step_id": "globalopts"}
-    )
+    result = await goto_setting(hass, result, "globalopts")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],
         user_input={

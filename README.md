@@ -90,19 +90,24 @@ recognised. Bermuda then asks it "whose tag is this?" for every Find Hub advert 
 
 ## Finding your devices among the neighbours'
 
-In a flat or a street, a Bluetooth scan shows dozens of devices that aren't yours. In the options,
-**Scan for new devices** now lists nearby devices **strongest signal first** (yours are usually the
-closest: hold your phone next to a proxy and it jumps to the top), each labelled with what it is
-("Apple device (iPhone, iPad, Mac or Watch)", "Windows PC", "AirPods / Beats earbuds", "Heart-rate
-monitor"...), its name if it has one, signal strength with a "very close / far / very weak" hint,
-how long ago it was heard, and the end of its address. Bluetooth adverts rarely carry an exact model,
-so the label says only what the device really tells us.
+In a flat or a street, a Bluetooth scan shows dozens of devices that aren't yours. The options menu is
+now a short list, and each job has its own screen with tick boxes:
 
-- **Hide these devices** removes a device from every list and from automatic tracking, for good.
-- **Hide every device of this kind** hides all *random-address* devices of that kind at once. Phones
-  change their Bluetooth address every few minutes, so hiding one address alone would not last.
-  Devices you track by hand are never hidden by kind.
-- **Hidden devices** (in the options menu) shows everything you've hidden; untick to bring it back.
+- **Add devices**: pick the room you're standing in ("Living room (7)"), then tick from the devices
+  nearest that room's proxies. Strongest signal first, so yours are at the top.
+- **Hide devices**: tick whole *kinds* ("Apple device (30)") to hide every device of that kind at
+  once, or choose to pick individual devices too. Hidden devices vanish from every list and are never
+  auto-tracked. Devices you track by hand are never hidden by kind.
+- **Identify a device**: pick one and see everything Bermuda knows: company id, service ids, the raw
+  data, and which proxies hear it at what strength. Useful when a label says "Unidentified device".
+- **Tracked devices** / **Hidden devices**: tick boxes for everything you've chosen; untick to undo.
+- **Settings**: calibration and learning, track whole categories, presence sensors, enrol an iPhone/Watch.
+
+Each device is labelled with what it is ("Windows PC / Microsoft device", "AirPods / Beats earbuds",
+"Heart-rate monitor"), its name if it has one, and **where it is loudest**, for example *"near Study"*
+or *"far from Living room"*, since signal strength only means something relative to a place. Unidentified
+devices show raw clues you can search for, like `company 0x04F2` or `service 0xFE9F`. Bluetooth adverts
+rarely carry an exact model, so the label says only what the device really tells us.
 
 ## Room learning (only when a device is poorly recognised)
 

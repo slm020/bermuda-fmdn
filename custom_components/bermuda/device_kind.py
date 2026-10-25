@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Final
 from bluetooth_data_tools import monotonic_time_coarse
 
 from .const import (
-    BDADDR_TYPE_RANDOM_RESERVED,
     BDADDR_TYPE_RANDOM_RESOLVABLE,
     BDADDR_TYPE_RANDOM_STATIC,
     BDADDR_TYPE_RANDOM_UNRESOLVABLE,
@@ -74,15 +73,6 @@ _NAME_HINTS: Final[tuple[tuple[tuple[str, ...], str], ...]] = (
     (("printer", "hp ", "canon", "epson", "brother"), "Printer"),
 )
 
-_RANDOM_TYPES: Final = frozenset(
-    {
-        BDADDR_TYPE_RANDOM_RESOLVABLE,
-        BDADDR_TYPE_RANDOM_UNRESOLVABLE,
-        BDADDR_TYPE_RANDOM_STATIC,
-        BDADDR_TYPE_RANDOM_RESERVED,
-    }
-)
-
 
 def describe_kind(  # noqa: PLR0911 - one early return per kind of evidence reads best
     *,
@@ -128,11 +118,6 @@ def describe_kind(  # noqa: PLR0911 - one early return per kind of evidence read
     return "Unidentified device"
 
 
-def is_random_address(device: BermudaDevice) -> bool:
-    """Whether the device uses a random (rotating or private) Bluetooth address."""
-    return device.address_type in _RANDOM_TYPES
-
-
 def _latest_advert(device: BermudaDevice) -> BermudaAdvert | None:
     """The advert with the newest timestamp, or None."""
     return max(device.adverts.values(), key=lambda advert: advert.stamp or 0.0, default=None)
@@ -154,40 +139,121 @@ def device_kind(device: BermudaDevice) -> str:
     )
 
 
+def strongest_advert(device: BermudaDevice) -> BermudaAdvert | None:
+    """The advert with the best signal: the proxy that hears this device loudest."""
+    heard = [advert for advert in device.adverts.values() if advert.rssi is not None]
+    return max(heard, key=lambda advert: advert.rssi, default=None)  # type: ignore[arg-type,return-value]
+
+
 def strongest_rssi(device: BermudaDevice) -> float | None:
     """The best signal strength (dBm) any proxy currently reports for the device."""
-    readings = [advert.rssi for advert in device.adverts.values() if advert.rssi is not None]
-    return max(readings) if readings else None
+    advert = strongest_advert(device)
+    return advert.rssi if advert is not None else None
 
 
-def _signal_text(rssi: float | None) -> str:
-    """Signal strength with a plain-English distance hint: the closest things are usually yours."""
+def device_room(device: BermudaDevice) -> tuple[str, str] | None:
+    """(area id, area name) of the proxy hearing the device loudest: roughly, where it is."""
+    advert = strongest_advert(device)
+    if advert is None or not advert.area_id:
+        return None
+    return advert.area_id, advert.area_name or advert.area_id
+
+
+def signal_phrase(rssi: float | None, room: str | None) -> str:
+    """Say how strong the signal is *relative to a place*, since "far" means nothing on its own."""
     if rssi is None:
         return "no signal"
     if rssi >= -55:
-        hint = "very close"
-    elif rssi >= -70:
-        hint = "near"
-    elif rssi >= -85:
-        hint = "far"
-    else:
-        hint = "very weak"
-    return f"{rssi:.0f} dBm, {hint}"
+        return f"right by {room}" if room else "very close"
+    if rssi >= -70:
+        return f"near {room}" if room else "near"
+    if rssi >= -85:
+        return f"far from {room}" if room else "far"
+    return f"barely reaches {room}" if room else "very weak"
 
 
-def device_label(device: BermudaDevice, *, now: float | None = None) -> str:
+def identity_hint(device: BermudaDevice) -> str | None:
     """
-    One-line picker label: kind, real name (if it has one), signal, age, short address.
+    Raw clues for a device that could not be identified: its company id, or a service id.
 
-    Example: ``Apple device (iPhone, iPad, Mac or Watch) · "Steve's phone" · -48 dBm, very close · 3s ago · …EE:FF``.
+    Searchable ("0x004C" or "0xFE2C"), so the user can look it up when the label says nothing.
     """
-    now = monotonic_time_coarse() if now is None else now
+    if device_kind(device) != "Unidentified device":
+        return None
+    advert = _latest_advert(device)
+    if advert is None:
+        return None
+    if advert.manufacturer_data and (ids := sorted(advert.manufacturer_data[0])):
+        return f"company 0x{ids[0]:04X}"
+    uuids = sorted({short_uuid(str(u)) for u in advert.service_uuids})
+    if advert.service_data:
+        uuids = sorted({*uuids, *(short_uuid(str(u)) for u in advert.service_data[0])})
+    return f"service 0x{uuids[0]}" if uuids else None
+
+
+def device_label(device: BermudaDevice) -> str:
+    """
+    Short picker label: what it is, its name if it has one, where it is loudest, end of address.
+
+    Example: ``Windows PC / Microsoft device · "DESKTOP-1" · near Study · …EE:FF``.
+    """
     parts = [device_kind(device)]
+    if hint := identity_hint(device):
+        parts.append(hint)
     real_name = device.name_bt_local_name or device.name_bt_serviceinfo or device.name_devreg
     if real_name:
         parts.append(f'"{real_name}"')
-    parts.append(_signal_text(strongest_rssi(device)))
-    if device.last_seen:
-        parts.append(f"{max(0, round(now - device.last_seen))}s ago")
+    room = device_room(device)
+    parts.append(signal_phrase(strongest_rssi(device), room[1] if room else None))
     parts.append(f"…{device.address.upper()[-8:]}")
     return " · ".join(parts)
+
+
+_ADDRESS_NOTES: Final = {
+    BDADDR_TYPE_RANDOM_RESOLVABLE: "random (resolvable: a phone-style private address that changes)",
+    BDADDR_TYPE_RANDOM_UNRESOLVABLE: "random (changes)",
+    BDADDR_TYPE_RANDOM_STATIC: "random (fixed until power-cycled)",
+}
+
+
+def _hex(data: bytes, limit: int = 24) -> str:
+    """Hex of the first bytes of a payload, with an ellipsis if cut."""
+    text = data[:limit].hex(" ")
+    return text + (" …" if len(data) > limit else "")
+
+
+def device_facts(device: BermudaDevice, *, now: float | None = None) -> list[tuple[str, str]]:
+    """
+    Everything Bermuda knows about a device, as (label, value) rows, for the "Identify" screen.
+
+    Raw ids are given in hex so they can be searched for; nothing is guessed beyond the kind.
+    """
+    now = monotonic_time_coarse() if now is None else now
+    advert = _latest_advert(device)
+    rows: list[tuple[str, str]] = [("Looks like", device_kind(device))]
+    names = [n for n in (device.name_bt_local_name, device.name_bt_serviceinfo, device.name_devreg) if n]
+    rows.append(("Name", ", ".join(dict.fromkeys(names)) if names else "none broadcast"))
+    rows.append(("Address", f"{device.address.upper()} · {_ADDRESS_NOTES.get(device.address_type, 'public')}"))
+    if device.manufacturer_id is not None or device.manufacturer:
+        company = f"0x{device.manufacturer_id:04X}" if device.manufacturer_id is not None else ""
+        rows.append(("Company", f"{device.manufacturer or 'unknown'} {company}".strip()))
+    if advert is not None:
+        for company_id, payload in (advert.manufacturer_data[0] if advert.manufacturer_data else {}).items():
+            rows.append((f"Manufacturer data 0x{company_id:04X}", _hex(payload) or "empty"))
+        if advert.service_uuids:
+            rows.append(("Services", ", ".join(f"0x{short_uuid(str(u))}" for u in advert.service_uuids[:8])))
+        for uuid, payload in (advert.service_data[0] if advert.service_data else {}).items():
+            rows.append((f"Service data 0x{short_uuid(str(uuid))}", _hex(bytes(payload)) or "empty"))
+    heard = sorted(
+        (a for a in device.adverts.values() if a.rssi is not None), key=lambda a: a.rssi or -999, reverse=True
+    )
+    if heard:
+        rows.append(
+            (
+                "Heard by",
+                "; ".join(f"{a.name} ({a.area_name or 'no room'}) {a.rssi:.0f} dBm" for a in heard[:5]),
+            )
+        )
+    if device.last_seen:
+        rows.append(("Last heard", f"{max(0, round(now - device.last_seen))} s ago"))
+    return rows

@@ -213,46 +213,16 @@
         }
       },
       "init": {
-        "description": "Bermuda can currently see:\n- {device_counter_active} active out of {device_counter_devices} bluetooth devices.\n- {scanner_counter_active} active out of {scanner_counter_scanners} bluetooth scanner devices.\n\n{status}",
+        "description": "{device_counter_active} of {device_counter_devices} devices and {scanner_counter_active} of {scanner_counter_scanners} proxies active.\n\n{status}",
         "title": "Configure Bermuda",
         "menu_options": {
-          "globalopts": "Global options",
-          "selectdevices": "Select devices to track",
-          "enrol_private": "Enrol a private device (IRK)",
-          "area_entities": "Area presence entities",
-          "scan": "Scan for new devices",
-          "blocklist": "Hidden devices (neighbours')"
+          "add": "Add devices",
+          "hide": "Hide devices",
+          "identify": "Identify a device",
+          "tracked": "Tracked devices",
+          "hidden": "Hidden devices",
+          "settings": "Settings"
         }
-      },
-      "scan": {
-        "title": "Scan for new devices",
-        "description": "{count} nearby device(s) not yet tracked, strongest signal first. The ones with the strongest signal are usually yours: try holding your phone next to a proxy and watch it jump to the top. Tick devices to track under **Devices to start tracking**, or tick a neighbour's under **Hide these devices** to stop it ever being listed again.",
-        "data": {
-          "add": "Devices to start tracking",
-          "refresh": "Refresh the list",
-          "hide": "Hide these devices (never show again)",
-          "hide_kinds": "Hide every device of this kind"
-        },
-        "data_description": {
-          "add": "Each entry shows what the device is, its name if it has one, its signal strength and how long ago it was heard.",
-          "refresh": "Tick this and submit to re-scan without saving — the device list refreshes.",
-          "hide": "For devices you know are not yours. They disappear from every list and are never auto-tracked. Undo this under Hidden devices.",
-          "hide_kinds": "Neighbours' phones change their Bluetooth address every few minutes, so hiding one address does not last. This hides every random-address device of the chosen kind (devices you track by hand are never hidden). Undo this under Hidden devices."
-        }
-      },
-      "selectdevices": {
-        "data": {
-          "devices": "Devices to track",
-          "track_categories": "Track whole categories",
-          "exclude": "Exclude these"
-        },
-        "data_description": {
-          "devices": "Pick the BLE devices Bermuda should track. Type to search. iBeacons and random MACs are labelled; devices you track but that aren't currently seen show as (saved).",
-          "track_categories": "Auto-track every device matching a selected category (e.g. all iBeacons or all named devices).",
-          "exclude": "Never track these, even if they match a tracked category."
-        },
-        "description": "Bermuda only creates tracker entities for the devices you select here. If the list is empty, no Bluetooth devices are being seen yet.",
-        "title": "Select Devices"
       },
       "enrol_private": {
         "title": "Enrol a private device (IRK)",
@@ -282,16 +252,92 @@
         "title": "Per-entity virtual distance",
         "description": "Set a virtual distance (metres) per entity — smaller wins over BLE more easily. Grouped by area:\n\n{area_summary}"
       },
-      "blocklist": {
-        "title": "Hidden devices",
-        "description": "{count} hidden. Untick an entry and submit to show it again.",
+      "settings": {
+        "title": "Settings",
+        "menu_options": {
+          "globalopts": "Distance, tracking & learning",
+          "categories": "Track whole categories",
+          "area_entities": "Presence sensors",
+          "enrol_private": "Enrol an iPhone / Watch"
+        }
+      },
+      "add": {
+        "title": "Add devices",
+        "description": "Pick the room you are standing in. Devices are filtered to those nearest its proxies.",
         "data": {
-          "devices": "Hidden devices",
-          "kinds": "Hidden kinds"
+          "room": "Room"
+        }
+      },
+      "add_pick": {
+        "title": "Add devices",
+        "description": "{count} nearby, strongest first. Tick to track.",
+        "data": {
+          "devices": "Devices"
+        }
+      },
+      "hide": {
+        "title": "Hide devices",
+        "description": "Tick whole kinds to hide at once.",
+        "data": {
+          "kinds": "Hide every device of this kind",
+          "individually": "Also pick individual devices"
         },
         "data_description": {
-          "devices": "These addresses are never listed or auto-tracked.",
-          "kinds": "Random-address devices of these kinds are never listed or auto-tracked."
+          "kinds": "Tracked devices are never hidden by kind."
+        }
+      },
+      "hide_room": {
+        "title": "Hide devices",
+        "description": "Pick the room you are standing in. Devices are filtered to those nearest its proxies.",
+        "data": {
+          "room": "Room"
+        }
+      },
+      "hide_pick": {
+        "title": "Hide devices",
+        "description": "{count} nearby, strongest first. Tick to hide.",
+        "data": {
+          "devices": "Devices"
+        }
+      },
+      "identify": {
+        "title": "Identify a device",
+        "description": "Pick the room you are standing in. Devices are filtered to those nearest its proxies.",
+        "data": {
+          "room": "Room"
+        }
+      },
+      "identify_pick": {
+        "title": "Identify a device",
+        "description": "Pick one to see everything known about it.",
+        "data": {
+          "device": "Device"
+        }
+      },
+      "identify_detail": {
+        "title": "Device details",
+        "description": "{facts}"
+      },
+      "tracked": {
+        "title": "Tracked devices",
+        "description": "{count} tracked. Untick to stop tracking.",
+        "data": {
+          "devices": "Devices"
+        }
+      },
+      "hidden": {
+        "title": "Hidden devices",
+        "description": "{count} hidden. Untick to show again.",
+        "data": {
+          "kinds": "Kinds",
+          "devices": "Devices"
+        }
+      },
+      "categories": {
+        "title": "Track whole categories",
+        "description": "Auto-track every device of a category.",
+        "data": {
+          "track_categories": "Categories"
         }
       }
     }

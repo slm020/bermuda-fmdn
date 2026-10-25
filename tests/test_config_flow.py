@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from tests.flow_helpers import goto_setting
 from custom_components.bermuda.const import DOMAIN
 from custom_components.bermuda.const import NAME
 
@@ -72,9 +73,7 @@ async def test_options_flow(hass: HomeAssistant, setup_bermuda_entry: MockConfig
     assert result.get("step_id") == "init"
 
     # select the globalopts menu option
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], user_input={"next_step_id": "globalopts"}
-    )
+    result = await goto_setting(hass, result, "globalopts")
 
     assert result.get("type") == FlowResultType.FORM
     assert result.get("step_id") == "globalopts"
