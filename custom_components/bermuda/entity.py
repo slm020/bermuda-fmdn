@@ -11,6 +11,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    ADDR_TYPE_FMDN_DEVICE,
     ADDR_TYPE_IBEACON,
     ADDR_TYPE_PRIVATE_BLE_DEVICE,
     CONF_UPDATE_INTERVAL,
@@ -144,6 +145,13 @@ class BermudaEntity(CoordinatorEntity[BermudaDataUpdateCoordinator]):
             # We don't set the model since the Private BLE integration should have
             # already named it nicely.
             domain_name = DOMAIN_PRIVATE_BLE_DEVICE
+        elif self._device.address_type == ADDR_TYPE_FMDN_DEVICE:
+            # Attach to the Google Find Hub device (same identifiers) so Bermuda's entities
+            # sit on the same device card as GoogleFindMy-HA's. Without it, fall through to our own.
+            devreg = self.coordinator.dr.async_get(self._device.fmdn_device_id) if self._device.fmdn_device_id else None
+            if devreg is not None and devreg.identifiers:
+                return dr.DeviceInfo(identifiers=set(devreg.identifiers))
+            connections = set()
         else:
             connections = {(dr.CONNECTION_BLUETOOTH, self._device.address.upper())}
             # No need to set model, since MAC address will be shown via connection.

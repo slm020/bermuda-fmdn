@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 
 from .const import (
+    ADDR_TYPE_FMDN_DEVICE,
     ADDR_TYPE_IBEACON,
     ADDR_TYPE_PRIVATE_BLE_DEVICE,
     BDADDR_TYPE_NOT_MAC48,
@@ -21,6 +22,7 @@ from .const import (
     BDADDR_TYPE_RANDOM_RESOLVABLE,
     BDADDR_TYPE_RANDOM_STATIC,
     BDADDR_TYPE_RANDOM_UNRESOLVABLE,
+    FMDN_ADDRESS_PREFIX,
 )
 
 # iBeacon metadevice identity: uuid_major_minor (uuid is 32 hex chars).
@@ -57,8 +59,11 @@ def classify_address(address: str) -> str:
     - 0b11 (0xC0 - 0xFF) Random Static (may change on power cycle only)
 
     Non-MAC shapes are Bermuda metadevice identities: an iBeacon
-    uuid_major_minor or a 32-hex IRK.
+    uuid_major_minor, a 32-hex IRK, or an ``fmdn:`` Google Find Hub tag.
     """
+    if address.startswith(FMDN_ADDRESS_PREFIX):
+        # fmdn:<device-registry id> identity of a resolved Google Find Hub tag.
+        return ADDR_TYPE_FMDN_DEVICE
     if address.count(":") != 5:
         # Doesn't look like an actual MAC address - should be some sort of metadevice.
         if _IBEACON_ADDRESS_RE.match(address):

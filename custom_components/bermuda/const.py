@@ -39,6 +39,7 @@ PLATFORMS = [
 
 # Should probably retrieve this from the component, but it's in "DOMAIN" *shrug*
 DOMAIN_PRIVATE_BLE_DEVICE = "private_ble_device"
+DOMAIN_GOOGLEFINDMY = "googlefindmy"  # GoogleFindMy-HA, provides the FMDN EID resolver
 
 # Signal names we are using:
 SIGNAL_DEVICE_NEW = f"{DOMAIN}-device-new"
@@ -91,8 +92,15 @@ METADEVICE_IBEACON_DEVICE: Final = "beacon device"  # The meta-device created to
 METADEVICE_TYPE_PRIVATE_BLE_SOURCE: Final = "private_ble_src"  # current (random) MAC of a private ble device
 METADEVICE_PRIVATE_BLE_DEVICE: Final = "private_ble_device"  # meta-device create to track private ble device
 
-METADEVICE_SOURCETYPES: Final = {METADEVICE_TYPE_IBEACON_SOURCE, METADEVICE_TYPE_PRIVATE_BLE_SOURCE}
-METADEVICE_DEVICETYPES: Final = {METADEVICE_IBEACON_DEVICE, METADEVICE_PRIVATE_BLE_DEVICE}
+METADEVICE_TYPE_FMDN_SOURCE: Final = "fmdn_src"  # current (rotating) MAC of a Google Find Hub tag
+METADEVICE_FMDN_DEVICE: Final = "fmdn_device"  # meta-device created to track a resolved Google Find Hub tag
+
+METADEVICE_SOURCETYPES: Final = {
+    METADEVICE_TYPE_IBEACON_SOURCE,
+    METADEVICE_TYPE_PRIVATE_BLE_SOURCE,
+    METADEVICE_TYPE_FMDN_SOURCE,
+}
+METADEVICE_DEVICETYPES: Final = {METADEVICE_IBEACON_DEVICE, METADEVICE_PRIVATE_BLE_DEVICE, METADEVICE_FMDN_DEVICE}
 
 # Bluetooth Device Address Type - classify MAC addresses
 BDADDR_TYPE_UNKNOWN: Final = "bd_addr_type_unknown"  # uninitialised
@@ -105,6 +113,7 @@ BDADDR_TYPE_NOT_MAC48: Final = "bd_addr_not_mac48"
 # Non-bluetooth address types - for our metadevice entries
 ADDR_TYPE_IBEACON: Final = "addr_type_ibeacon"
 ADDR_TYPE_PRIVATE_BLE_DEVICE: Final = "addr_type_private_ble_device"
+ADDR_TYPE_FMDN_DEVICE: Final = "addr_type_fmdn_device"
 
 # Device categories (ESPresense-style fingerprints) — used to group the discovery
 # list and to track whole classes of device at once (see CONF_TRACK_CATEGORIES).
@@ -174,6 +183,13 @@ class IrkTypes(Enum):
 # expires adverts at 195 seconds to avoid churning.
 #
 PRUNE_MAX_COUNT = 500  # How many device entries to allow at maximum
+# Google Find Hub (FMDN) tags: Eddystone service uuid, frame types, and the metadevice address prefix.
+FMDN_SERVICE_UUID: Final = "FEAA"
+FMDN_FRAME_TYPES: Final = frozenset({0x40, 0x41})
+FMDN_EID_LENGTHS: Final = (20, 32)  # legacy secp160r1 and P-256 EIDs
+FMDN_ADDRESS_PREFIX: Final = "fmdn:"
+FMDN_RETRY_INTERVAL: Final = 60  # seconds between re-resolving an advert that had no match
+
 PRUNE_TIME_INTERVAL = 180  # Every 3m, prune stale devices
 # ### Note about timeouts: Bluez and HABT cache for 180 or 195 seconds. Setting
 # timeouts below that may result in prune/create/prune churn, but as long as

@@ -85,6 +85,14 @@ class BermudaMicrolocationMixin:
             """Declared for mypy; implemented by BermudaDataUpdateCoordinator."""
             ...
 
+        def fmdn_redirect(self, device: BermudaDevice) -> BermudaDevice:
+            """Declared for mypy; implemented by BermudaFmdnMixin."""
+            ...
+
+        def fmdn_metadevice_for_registry_id(self, device_id: str) -> BermudaDevice | None:
+            """Declared for mypy; implemented by BermudaFmdnMixin."""
+            ...
+
     def _microloc_init(self, hass: HomeAssistant, entry: BermudaConfigEntry) -> None:
         """Set up the fingerprint store/matcher, kick off a background load, and register services."""
         # The store persists named spots to disk; the matcher compares a device's
@@ -236,6 +244,17 @@ class BermudaMicrolocationMixin:
         """
         if not value:
             return None
+        # A rotating Google Find Hub MAC is redirected to the tag's stable metadevice so
+        # that spots are always saved against (and matched on) the persistent identity.
+        if (device := self._resolve_device_exact(value)) is not None:
+            return self.fmdn_redirect(device)
+        return None
+
+    def _resolve_device_exact(self, value: str) -> BermudaDevice | None:
+        """Resolve ``value`` as given (see _resolve_device); no tag redirection."""
+        # A Google Find Hub device (GoogleFindMy-HA's registry id)?
+        if (device := self.fmdn_metadevice_for_registry_id(value)) is not None:
+            return device
         # Home Assistant device-registry id?
         if (devreg := self.dr.async_get(value)) is not None:
             for conn_type, conn_value in devreg.connections:

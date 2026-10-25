@@ -65,6 +65,29 @@ recalibration. None of this changes the existing Area logic — it's purely addi
 _(Micro-locations and the MCP service/intent API were ported from
 [belikh/bermuda2](https://github.com/belikh/bermuda2).)_
 
+## Google Find Hub tags (rotating MAC addresses)
+
+Google Find Hub trackers (Pixel/Android phones, Chipolo, Pebblebee, Moto Tag and other
+"Works with Find Hub" tags) change their Bluetooth address about every 17 minutes, which
+normally makes them untrackable. This fork recognises them anyway.
+
+Bermuda does **not** log into Google itself. Install
+[GoogleFindMy-HA](https://github.com/BSkando/GoogleFindMy-HA) (v1.7.0-3 or later) and sign in
+there: it holds the Google account and the keys that let a tag's rotating identifier be
+recognised. Bermuda then asks it "whose tag is this?" for every Find Hub advert it hears.
+
+- Each tag becomes **one stable Bermuda device** (`fmdn:<id>`), however often its MAC changes.
+  Its Bermuda sensors appear on the same device card as GoogleFindMy-HA's entities.
+- **Micro-location spots** are saved against that stable device, so a spot you calibrate keeps
+  working after the tag rotates. `calibrate_location` / `where_is` accept the tag's current MAC
+  or the Google device.
+- A tag shared between two Google accounts gets one Bermuda device per account.
+- Without GoogleFindMy-HA everything else works as before; Find Hub tags just stay unresolved
+  random-MAC devices (see `fmdn` in the diagnostics download).
+
+> This fork keeps the `bermuda` domain, so remove the upstream/foXaCe Bermuda from HACS before
+> adding this one (your settings and spots are kept; they are stored by Home Assistant, not HACS).
+
 ## What you need:
 
 - Home Assistant. The current release of Bermuda requires at least ![haminverbadge]

@@ -50,6 +50,14 @@ class BermudaMetadeviceMixin:
         metadevices: dict[str, BermudaDevice]
         _do_private_device_init: bool
 
+        def discover_fmdn_metadevices(self) -> None:
+            """Declared for mypy; implemented by BermudaFmdnMixin."""
+            ...
+
+        def fmdn_retry_unresolved(self) -> None:
+            """Declared for mypy; implemented by BermudaFmdnMixin."""
+            ...
+
         def _get_or_create_device(self, address: str) -> BermudaDevice: ...
         def _get_device(self, address: str) -> BermudaDevice | None: ...
 
@@ -225,6 +233,9 @@ class BermudaMetadeviceMixin:
         # Seed Private BLE metadevice skeletons (only runs if _do_private_device_init is set).
         # Note: pble devices are also created at realtime when detected.
         self.discover_private_ble_metadevices()
+        # Likewise Google Find Hub tags known to GoogleFindMy-HA, and any adverts still awaiting a match.
+        self.discover_fmdn_metadevices()
+        self.fmdn_retry_unresolved()
 
         # iBeacon devices should already have their metadevices created, so nothing more to
         # set up for them.

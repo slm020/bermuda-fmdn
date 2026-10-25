@@ -240,6 +240,8 @@ class BermudaAdvert:
             if advertisementdata.service_data not in self.service_data[1:]:
                 _want_name_update = True
             del self.service_data[HIST_KEEP_COUNT:]
+            # Google Find Hub tags rotate their MAC with their payload: resolve it to the stable tag.
+            self._device.process_service_data(self)
 
         for service_uuid in advertisementdata.service_uuids:
             if service_uuid not in self.service_uuids:

@@ -30,6 +30,7 @@ from .bermuda_device_scanner import BermudaScannerDeviceMixin
 from .const import (
     _LOGGER,
     _LOGGER_SPAM_LESS,
+    ADDR_TYPE_FMDN_DEVICE,
     ADDR_TYPE_IBEACON,
     ADDR_TYPE_PRIVATE_BLE_DEVICE,
     BDADDR_TYPE_NOT_MAC48,
@@ -52,10 +53,12 @@ from .const import (
     DEFAULT_MOBILITY_TYPE,
     DISTANCE_INFINITE,
     DOMAIN,
+    FMDN_SERVICE_UUID,
     ICON_DEFAULT_AREA,
     ICON_DEFAULT_FLOOR,
     MANUFACTURER_ID_APPLE,
     MANUFACTURER_ID_INPLAY,
+    METADEVICE_FMDN_DEVICE,
     METADEVICE_IBEACON_DEVICE,
     METADEVICE_PRIVATE_BLE_DEVICE,
     METADEVICE_TYPE_IBEACON_SOURCE,
@@ -181,6 +184,8 @@ class BermudaDevice(BermudaScannerDeviceMixin):
         self._is_remote_scanner: bool | None = None
         self.stamps: dict[str, float] = {}
         self.metadevice_type: set[str] = set()
+        self.fmdn_device_id: str | None = None  # HA device-registry id of the Google Find Hub device
+        self.fmdn_canonical_id: str | None = None  # Google's id for the physical tag
         self.metadevice_sources: list[str] = []  # list of MAC addresses that have/should match this beacon
         self.beacon_unique_id: str | None = None  # combined uuid_major_minor for *really* unique id
         self.beacon_uuid: str | None = None
@@ -242,6 +247,9 @@ class BermudaDevice(BermudaScannerDeviceMixin):
                 self._coordinator.irk_manager.register_irk_callback(self.async_handle_pble_callback, _irk_bytes)
             )
             self._coordinator.irk_manager.add_irk(_irk_bytes)
+        elif self.address_type == ADDR_TYPE_FMDN_DEVICE:
+            # fmdn:<registry id> is a resolved Google Find Hub tag; its sources are the rotating MACs.
+            self.metadevice_type.add(METADEVICE_FMDN_DEVICE)
         elif self.address_type == BDADDR_TYPE_RANDOM_RESOLVABLE:
             # What we are really interested in tracking is IRK devices, since
             # their MACs rotate so rapidly.
@@ -508,6 +516,14 @@ class BermudaDevice(BermudaScannerDeviceMixin):
         # Let's see if we should update our last_seen based on this...
         if device_advert.stamp is not None and self.last_seen < device_advert.stamp:
             self.last_seen = device_advert.stamp
+
+    def process_service_data(self, advert: BermudaAdvert) -> None:
+        """Offer an advert's service data to the Google Find Hub (FMDN) resolver."""
+        if not advert.service_data:
+            return
+        service_data = advert.service_data[0]
+        if any(short_uuid(str(uuid)) == FMDN_SERVICE_UUID for uuid in service_data):
+            self._coordinator.fmdn_handle_advertisement(self, service_data)
 
     def identify_tracker_type(self, advert: BermudaAdvert) -> None:
         """
