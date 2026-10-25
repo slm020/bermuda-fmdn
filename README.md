@@ -4,6 +4,31 @@
 
 # Bermuda BLE Trilateration
 
+> [!WARNING]
+> **This is an unofficial fork, and it is vibe coded.** Everything that differs from upstream was written with an
+> AI assistant (Claude) for one person's home setup. It is lightly tested, comes **as is** with no support and no
+> guarantees, and may break your Home Assistant setup. Read the code and back up before using it. It is shared in
+> case it is useful to someone, or to the upstream maintainers if they want to take any of it.
+
+## What this fork changes
+
+Forked from [foXaCe/bermuda](https://github.com/foXaCe/bermuda), which is itself a fork of
+[agittins/bermuda](https://github.com/agittins/bermuda). Thanks to both. What is added here:
+
+- **Google Find Hub tags** (Pixel Buds, Chipolo, Pebblebee...) that rotate their Bluetooth address every ~15 minutes
+  are followed as one device, using the [GoogleFindMy-HA](https://github.com/BSkando/GoogleFindMy-HA) key resolver
+  (needed for this feature; Bermuda holds no Google login itself).
+- **Prompted room learning**: when a device's room is poorly recognised, Bermuda offers to learn it (Repairs prompt),
+  with `learn_room` / `reset_learning` services, a training-room select and Learn/Reset buttons.
+- **Reworked device picker**: tick-box lists, devices labelled with what they are and roughly how far away, and
+  hide-by-kind (for example all Apple devices at once).
+- **Calibration wizard** (distance and per-proxy offsets) in the options menu.
+- **Bug fix**: `bermuda.set_scanner_offset` wrote to legacy options that the v2 coordinator overwrote at load.
+
+It keeps the `bermuda` domain, so it **replaces** the original rather than running beside it. Install by copying
+`custom_components/bermuda` into your config, or add this repository to HACS as a custom repository.
+
+
 - Track bluetooth devices by Area (Room) in [Home Assistant](https://home-assistant.io/), using [ESPHome](https://esphome.io/) [Bluetooth Proxies](https://esphome.io/components/bluetooth_proxy.html) and Shelly Gen2 or later devices.
 
 - (eventually) Triangulate device positions! Like, on a map. Maybe.
