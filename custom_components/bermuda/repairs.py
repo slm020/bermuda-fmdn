@@ -20,6 +20,7 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.helpers.selector import AreaSelector
 
 from .const import DOMAIN, REPAIR_SCANNER_WITHOUT_AREA, REPAIR_TRAIN_PREFIX
+from .device_kind import device_kind, ha_device_name
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -84,7 +85,11 @@ class TrainRoomRepairFlow(RepairsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({vol.Required("area"): AreaSelector()}),
-            description_placeholders={"device": device.name},
+            description_placeholders={
+                "device": ha_device_name(self._hass, device),
+                "kind": device_kind(device),
+                "areas": "several rooms",
+            },
         )
 
 

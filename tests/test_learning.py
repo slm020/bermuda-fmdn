@@ -556,7 +556,7 @@ async def test_repairs_flow_asks_for_the_room_and_starts_training(hass, setup_be
 
     form = await flow.async_step_init()
     assert form["type"] is FlowResultType.FORM
-    assert form["description_placeholders"] == {"device": "Keys"}
+    assert form["description_placeholders"] == {"device": "Keys", "kind": "Unidentified device", "areas": "several rooms"}
 
     done = await flow.async_step_init({"area": kitchen.id})
     assert done["type"] is FlowResultType.CREATE_ENTRY

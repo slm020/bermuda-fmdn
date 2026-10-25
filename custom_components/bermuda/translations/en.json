@@ -205,12 +205,12 @@
       "title": "Some Bluetooth Proxies don't have an AREA"
     },
     "room_confidence_low": {
-      "title": "{device}'s room is hard to pin down",
+      "title": "Bermuda can't tell which room {device} is in",
       "fix_flow": {
         "step": {
           "init": {
-            "title": "Train {device}",
-            "description": "Bermuda keeps flip-flopping between {areas} for {device}. You can teach it what {device} looks like in a room: put it in the room, pick the room below and leave it there for about five minutes. Only {device} is affected, and only when Bermuda is unsure.",
+            "title": "Teach Bermuda where {device} is",
+            "description": "**{device}** (Home Assistant device name; Bermuda sees it as: {kind})\n\nBermuda keeps changing its mind between {areas} for this device, so the room it shows may be wrong.\n\nTo fix it: take {device} to ONE room, choose that room below, press Submit and leave it there for about 5 minutes while Bermuda listens. Only this device is affected, and Bermuda only uses what it learns when it is unsure.\n\nDon't want to? Close this and choose Ignore; it won't ask again for this device.",
             "data": {
               "area": "The room {device} is in right now"
             }

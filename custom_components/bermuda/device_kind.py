@@ -16,16 +16,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from bluetooth_data_tools import monotonic_time_coarse
+from homeassistant.helpers import device_registry as dr
 
 from .const import (
     BDADDR_TYPE_RANDOM_RESOLVABLE,
     BDADDR_TYPE_RANDOM_STATIC,
     BDADDR_TYPE_RANDOM_UNRESOLVABLE,
+    DOMAIN,
 )
 from .trackers import short_uuid
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from homeassistant.core import HomeAssistant
 
     from .bermuda_advert import BermudaAdvert
     from .bermuda_device import BermudaDevice
@@ -244,6 +248,12 @@ def device_label(device: BermudaDevice) -> str:
     parts.append(where_text(device))
     parts.append(f"…{device.address.upper()[-8:]}")
     return " · ".join(parts)
+
+
+def ha_device_name(hass: HomeAssistant, device: BermudaDevice) -> str:
+    """The device's name as Home Assistant shows it (a rename wins), else Bermuda's own name for it."""
+    entry = dr.async_get(hass).async_get_device_by_identifier(DOMAIN, str(device.unique_id))
+    return (entry and (entry.name_by_user or entry.name)) or device.name_by_user or device.name_subentry or device.name
 
 
 _ADDRESS_NOTES: Final = {

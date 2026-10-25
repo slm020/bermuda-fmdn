@@ -39,6 +39,7 @@ from .const import (
     LEARN_SAMPLES,
     REPAIR_TRAIN_PREFIX,
 )
+from .device_kind import device_kind, ha_device_name
 from .room_learning import ConfidenceResult, ConfidenceTracker, ProfileStore, RoomProfile, match_rooms
 
 if TYPE_CHECKING:
@@ -196,7 +197,8 @@ class BermudaLearningMixin:
             severity=ir.IssueSeverity.WARNING,
             translation_key="room_confidence_low",
             translation_placeholders={
-                "device": device.name,
+                "device": ha_device_name(self.hass, device),
+                "kind": device_kind(device),
                 "areas": " and ".join(names) if names else "several rooms",
             },
             data={"device_key": device.address},
