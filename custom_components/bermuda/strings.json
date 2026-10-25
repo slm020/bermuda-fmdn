@@ -154,7 +154,7 @@
       "unknown": "Could not enrol the device. Check the IRK and try again.",
       "no_signal": "That proxy heard the phone fewer than 4 times in 40 seconds. Keep the phone awake with its screen on, move closer and try again.",
       "unstable": "The signal was jumpy. Hold the phone still, away from walls and people, and try again.",
-      "inconsistent": "The 3 m reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
+      "inconsistent": "The far reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
     },
     "step": {
       "globalopts": {
@@ -367,7 +367,11 @@
       },
       "calibrate_ready": {
         "title": "Get ready",
-        "description": "{instruction}"
+        "description": "{instruction}",
+        "data": {
+          "distance": "Far distance (step 2 only)",
+          "skip": "Skip step 2 and keep my current fade rate"
+        }
       }
     },
     "progress": {

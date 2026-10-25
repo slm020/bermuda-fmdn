@@ -302,3 +302,32 @@ async def test_measure_collects_only_fresh_readings(hass, setup_bermuda_entry, m
     await feeder
     assert samples == sorted(samples, reverse=True)  # in order, each reading once
     assert len(samples) == len(set(samples)) >= 3
+
+
+async def test_far_distance_can_be_2_m(hass, setup_bermuda_entry, readings):
+    result, lounge, _kitchen = await _wizard(hass, setup_bermuda_entry)
+    result = await _pick(hass, result, "calibrate_distance", proxy=lounge.address)
+    readings.append([-60.0] * 10)
+    result = await _finish_progress(hass, await _submit(hass, result))
+    assert "Step 2 of 2" in result["description_placeholders"]["instruction"]
+    readings.append([-66.0] * 10)  # 6 dB weaker at 2 m  =>  exponent ~2.0 (readings round to 0.1 dB)
+    result = await _finish_progress(hass, await _submit(hass, result, distance="2"))
+    assert result["step_id"] == "calibrate_hub"
+    assert "fade rate 1.99" in result["description_placeholders"]["status"]
+
+
+async def test_far_step_can_be_skipped_keeping_the_current_fade_rate(hass, setup_bermuda_entry, readings):
+    result, lounge, _kitchen = await _wizard(hass, setup_bermuda_entry)
+    result = await _pick(hass, result, "calibrate_distance", proxy=lounge.address)
+    readings.append([-58.0] * 10)
+    result = await _finish_progress(hass, await _submit(hass, result))
+    result = await _submit(hass, result, skip=True)
+    assert result["step_id"] == "calibrate_hub"
+    status = result["description_placeholders"]["status"]
+    assert "1 m reads -58.0 dBm" in status
+    assert "kept because the far reading was skipped" in status
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={"next_step_id": "calibrate_save"}
+    )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert setup_bermuda_entry.options[CONF_REF_POWER] == -58.0

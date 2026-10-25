@@ -16,9 +16,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.config_entries import OptionsFlow
-from homeassistant.helpers.selector import SelectOptionDict, SelectSelector
+from homeassistant.helpers.selector import (
+    BooleanSelector,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 
 from .calibration import (
+    FAR_CHOICES,
     FAR_METRES,
     MEASURE_SECONDS,
     SAMPLE_INTERVAL,
@@ -33,6 +40,7 @@ from .const import (
     CONF_ATTENUATION,
     CONF_REF_POWER,
     CONF_RSSI_OFFSETS,
+    DEFAULT_ATTENUATION,
     DEFAULT_REF_POWER,
 )
 from .device_kind import device_label
@@ -101,6 +109,11 @@ class CalibrationFlowMixin(OptionsFlow):
         cal = self._cal
         if cal.get("ref_power") is None:
             distance = "**Distance:** not measured yet."
+        elif cal.get("skipped_far"):
+            distance = (
+                f"**Distance:** 1 m reads {cal['ref_power']:.1f} dBm, fade rate {cal['attenuation']:.2f}"
+                " (your current setting, kept because the far reading was skipped; not saved yet)."
+            )
         else:
             distance = (
                 f"**Distance:** 1 m reads {cal['ref_power']:.1f} dBm, fade rate {cal['attenuation']:.2f}"
@@ -173,18 +186,39 @@ class CalibrationFlowMixin(OptionsFlow):
         """Tell the user exactly where to hold the phone, then measure when they press Submit."""
         assert self._cal is not None  # noqa: S101
         if user_input is not None:
+            if self._cal["goal"] == "far":
+                if user_input.get("skip"):
+                    return await self._cal_skip_far()
+                self._cal["far_metres"] = float(user_input.get("distance", FAR_METRES))
             return await self.async_step_calibrate_measure()
         proxy = self._cal_coordinator.devices.get(self._cal["target"])
         name = self._proxy_name(proxy) if proxy else self._cal["target"]
-        where = {"1m": "**1 m**", "far": f"**{FAR_METRES:.0f} m**", "proxy": "**1 m**"}[self._cal["goal"]]
-        step = {"1m": "Step 1 of 2.", "far": "Step 2 of 2: move back, in a straight line.", "proxy": ""}[
-            self._cal["goal"]
-        ]
+        far_metres = float(self._cal.get("far_metres", FAR_METRES))
+        where = {"1m": "**1 m**", "far": f"**{far_metres:.0f} m**", "proxy": "**1 m**"}[self._cal["goal"]]
+        step = {
+            "1m": "Step 1 of 2.",
+            "far": (
+                "Step 2 of 2: move back, in a straight line. If this proxy can't hear the phone that far, "
+                "pick a nearer distance below, or tick Skip to keep your current fade rate."
+            ),
+            "proxy": "",
+        }[self._cal["goal"]]
+        schema: dict[Any, Any] = {}
+        if self._cal["goal"] == "far":
+            schema = {
+                vol.Required("distance", default=str(int(far_metres))): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[SelectOptionDict(value=str(int(m)), label=f"{int(m)} m") for m in FAR_CHOICES],
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional("skip", default=False): BooleanSelector(),
+            }
         errors = {"base": self._cal_error} if self._cal_error else None
         self._cal_error = None
         return self.async_show_form(
             step_id="calibrate_ready",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
                 "instruction": (
@@ -241,7 +275,7 @@ class CalibrationFlowMixin(OptionsFlow):
             return await self.async_step_calibrate_ready()
         if goal == "far":
             adjusted_far = measurement.median + self._cal_offset_before(target)
-            attenuation = attenuation_from(cal["adjusted_1m"], adjusted_far)
+            attenuation = attenuation_from(cal["adjusted_1m"], adjusted_far, float(cal.get("far_metres", FAR_METRES)))
             if not is_plausible_attenuation(attenuation):
                 self._cal_error = "inconsistent"
                 cal["goal"] = "1m"  # the pair is suspect: redo both
@@ -250,6 +284,16 @@ class CalibrationFlowMixin(OptionsFlow):
             cal["attenuation"] = round(attenuation, 2)
         else:
             cal["raw_1m"][target] = measurement.median
+        cal["goal"] = None
+        return await self.async_step_calibrate_hub()
+
+    async def _cal_skip_far(self) -> ConfigFlowResult:
+        """Keep the user's current fade rate: only the 1 m reading is taken from this wizard."""
+        assert self._cal is not None  # noqa: S101
+        cal = self._cal
+        cal["ref_power"] = round(cal["adjusted_1m"], 1)
+        cal["attenuation"] = float(self.options.get(CONF_ATTENUATION, DEFAULT_ATTENUATION))
+        cal["skipped_far"] = True
         cal["goal"] = None
         return await self.async_step_calibrate_hub()
 
