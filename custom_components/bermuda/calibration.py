@@ -4,10 +4,10 @@ Distance calibration: turning a few measured signal strengths into Bermuda's set
 Bermuda estimates distance as ``10 ** ((ref_power - rssi) / (10 * attenuation))`` where
 ``ref_power`` is the signal strength (dBm) at 1 m and ``attenuation`` says how quickly the
 signal fades in your home. Rather than ask for those numbers, the guided calibration measures
-them: hold a phone 1 m from a proxy, then 5 m, and (optionally) 1 m from each other proxy.
+them: hold a phone 1 m from a proxy, then 3 m, and (optionally) 1 m from each other proxy.
 
 * ``ref_power`` is the reading at 1 m.
-* ``attenuation`` follows from the drop between 1 m and 5 m.
+* ``attenuation`` follows from the drop between 1 m and 3 m.
 * each proxy's ``rssi_offset`` is whatever lines its 1 m reading up with ``ref_power``.
 
 The maths here is pure; ``apply_scanner_offsets`` is the one function that touches Home Assistant.
@@ -42,7 +42,7 @@ MEASURE_SECONDS: Final = 20  # how long one measurement listens
 SAMPLE_INTERVAL: Final = 0.5  # how often it checks for a new reading
 MIN_SAMPLES: Final = 6  # fewer readings than this and the proxy barely heard the phone
 MAX_SPREAD_DB: Final = 8.0  # a jumpier signal than this (std dev, dB) gives a poor measurement
-FAR_METRES: Final = 5.0  # the second distance used to work out attenuation
+FAR_METRES: Final = 3.0  # the second distance used to work out attenuation
 MIN_ATTENUATION: Final = 1.0  # outside 1..6 the two readings can't both be right
 MAX_ATTENUATION: Final = 6.0
 

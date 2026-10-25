@@ -48,8 +48,8 @@ def test_stability_is_judged_on_spread():
 def test_attenuation_recovers_the_exponent_used_to_make_the_readings():
     ref = -60.0
     for exponent in (2.0, 2.7, 3.4):
-        rssi_5m = ref - 10 * exponent * math.log10(5)
-        assert attenuation_from(ref, rssi_5m) == pytest.approx(exponent)
+        rssi_far = ref - 10 * exponent * math.log10(3)
+        assert attenuation_from(ref, rssi_far) == pytest.approx(exponent)
 
 
 @pytest.mark.parametrize(
@@ -172,7 +172,7 @@ async def test_full_wizard_measures_distance_and_a_proxy_then_saves(hass, setup_
     result, lounge, kitchen = await _wizard(hass, setup_bermuda_entry)
     assert "not measured yet" in result["description_placeholders"]["status"]
 
-    # Distance: 1 m then 5 m from the lounge proxy.
+    # Distance: 1 m then 3 m from the lounge proxy.
     result = await _pick(hass, result, "calibrate_distance", proxy=lounge.address)
     assert result["step_id"] == "calibrate_ready"
     assert "Step 1 of 2" in result["description_placeholders"]["instruction"]
@@ -182,8 +182,8 @@ async def test_full_wizard_measures_distance_and_a_proxy_then_saves(hass, setup_
     result = await _finish_progress(hass, await _submit(hass, result))
     assert result["step_id"] == "calibrate_ready"
     assert "Step 2 of 2" in result["description_placeholders"]["instruction"]
-    assert "**5 m**" in result["description_placeholders"]["instruction"]
-    readings.append([-81.0] * 10)  # 21 dB weaker at 5 m  =>  exponent 3.0
+    assert "**3 m**" in result["description_placeholders"]["instruction"]
+    readings.append([-74.3] * 10)  # 14.3 dB weaker at 3 m  =>  exponent 3.0
     result = await _finish_progress(hass, await _submit(hass, result))
     assert result["step_id"] == "calibrate_hub"
     status = result["description_placeholders"]["status"]
@@ -236,7 +236,7 @@ async def test_inconsistent_distance_readings_restart_the_pair(hass, setup_bermu
     result = await _pick(hass, result, "calibrate_distance", proxy=lounge.address)
     readings.append([-60.0] * 10)
     result = await _finish_progress(hass, await _submit(hass, result))
-    readings.append([-58.0] * 10)  # "5 m" reads stronger than "1 m": the user got the distances wrong
+    readings.append([-58.0] * 10)  # "3 m" reads stronger than "1 m": the user got the distances wrong
     result = await _finish_progress(hass, await _submit(hass, result))
     assert result["errors"] == {"base": "inconsistent"}
     assert "Step 1 of 2" in result["description_placeholders"]["instruction"]  # back to the start of the pair

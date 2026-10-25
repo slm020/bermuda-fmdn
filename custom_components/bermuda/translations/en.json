@@ -231,7 +231,7 @@
       "unknown": "Could not enrol the device. Check the IRK and try again.",
       "no_signal": "That proxy barely heard the phone. Wake the phone, move closer and try again.",
       "unstable": "The signal was jumpy. Hold the phone still, away from walls and people, and try again.",
-      "inconsistent": "The 5 m reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
+      "inconsistent": "The 3 m reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
     },
     "step": {
       "area_entities": {
@@ -413,7 +413,7 @@
       },
       "calibrate": {
         "title": "Calibrate distances",
-        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 5 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\\n\\nPick the phone you'll hold (keep its screen on).",
+        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 3 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\\n\\nPick the phone you'll hold (keep its screen on).",
         "data": {
           "device": "Phone"
         }
@@ -422,7 +422,7 @@
         "title": "Calibrate distances",
         "description": "{status}\\n\\nStart with **Distance**, then do each proxy you want to even out, then **Save**.",
         "menu_options": {
-          "calibrate_distance": "Distance (1 m and 5 m)",
+          "calibrate_distance": "Distance (1 m and 3 m)",
           "calibrate_proxy": "Even out a proxy (1 m)",
           "calibrate_save": "Save and finish",
           "calibrate_discard": "Discard"
@@ -430,7 +430,7 @@
       },
       "calibrate_distance": {
         "title": "Distance",
-        "description": "Pick the proxy you can stand 1 m and 5 m from, in a straight line.",
+        "description": "Pick the proxy you can stand 1 m and 3 m from, in a straight line.",
         "data": {
           "proxy": "Proxy"
         }

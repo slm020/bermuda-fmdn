@@ -1,7 +1,7 @@
 """
 The guided calibration wizard, as a mixin for the options flow.
 
-Walks the user through it slowly: pick the phone, then measure it at 1 m and 5 m from one
+Walks the user through it slowly: pick the phone, then measure it at 1 m and 3 m from one
 proxy (this sets how distance is worked out), then optionally at 1 m from each other proxy
 (this evens out differences between proxies). Each measurement is taken automatically while
 a progress spinner shows. Nothing is saved until the user presses Save, so a half-finished
@@ -154,7 +154,7 @@ class CalibrationFlowMixin(OptionsFlow):
         )
 
     async def async_step_calibrate_distance(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Distance: pick the proxy you can stand 1 m and 5 m from."""
+        """Distance: pick the proxy you can stand 1 m and 3 m from."""
         assert self._cal is not None  # noqa: S101
         if user_input is not None:
             self._cal.update(goal="1m", target=user_input["proxy"], reference=user_input["proxy"])
@@ -176,8 +176,8 @@ class CalibrationFlowMixin(OptionsFlow):
             return await self.async_step_calibrate_measure()
         proxy = self._cal_coordinator.devices.get(self._cal["target"])
         name = self._proxy_name(proxy) if proxy else self._cal["target"]
-        where = {"1m": "**1 m**", "5m": f"**{FAR_METRES:.0f} m**", "proxy": "**1 m**"}[self._cal["goal"]]
-        step = {"1m": "Step 1 of 2.", "5m": "Step 2 of 2: move back, in a straight line.", "proxy": ""}[
+        where = {"1m": "**1 m**", "far": f"**{FAR_METRES:.0f} m**", "proxy": "**1 m**"}[self._cal["goal"]]
+        step = {"1m": "Step 1 of 2.", "far": "Step 2 of 2: move back, in a straight line.", "proxy": ""}[
             self._cal["goal"]
         ]
         errors = {"base": self._cal_error} if self._cal_error else None
@@ -237,11 +237,11 @@ class CalibrationFlowMixin(OptionsFlow):
         if goal == "1m":
             cal["raw_1m"][target] = measurement.median
             cal["adjusted_1m"] = measurement.median + self._cal_offset_before(target)
-            cal["goal"] = "5m"
+            cal["goal"] = "far"
             return await self.async_step_calibrate_ready()
-        if goal == "5m":
-            adjusted_5m = measurement.median + self._cal_offset_before(target)
-            attenuation = attenuation_from(cal["adjusted_1m"], adjusted_5m)
+        if goal == "far":
+            adjusted_far = measurement.median + self._cal_offset_before(target)
+            attenuation = attenuation_from(cal["adjusted_1m"], adjusted_far)
             if not is_plausible_attenuation(attenuation):
                 self._cal_error = "inconsistent"
                 cal["goal"] = "1m"  # the pair is suspect: redo both
