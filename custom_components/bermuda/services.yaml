@@ -186,3 +186,31 @@ set_scanner_offset:
 get_config:
   name: Get configuration
   description: Return Bermuda's current calibration, tracked devices, scanners and micro-location count.
+
+learn_room:
+  name: Learn room
+  description: >-
+    Teach Bermuda what a tracked device looks like in a room. Leave the device in
+    that room for about five minutes while it collects samples. Afterwards,
+    whenever Bermuda is unsure which room the device is in, it checks the trained rooms.
+  fields:
+    device:
+      required: true
+      example: "Keys"
+      selector:
+        text:
+    area:
+      required: true
+      example: "Kitchen"
+      selector:
+        text:
+
+reset_learning:
+  name: Reset room learning
+  description: Forget every room trained for a device.
+  fields:
+    device:
+      required: true
+      example: "Keys"
+      selector:
+        text:

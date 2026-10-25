@@ -26,6 +26,7 @@ CYCLE_PHASES = {
     "per_device",
     "area_refresh",
     "area_overrides",
+    "learning",
     "microlocations",
     "configured_seed",
     "entity_creation",

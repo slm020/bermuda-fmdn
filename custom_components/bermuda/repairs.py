@@ -17,8 +17,9 @@ from typing import TYPE_CHECKING, Any, cast
 import voluptuous as vol
 from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.helpers.selector import AreaSelector
 
-from .const import DOMAIN, REPAIR_SCANNER_WITHOUT_AREA
+from .const import DOMAIN, REPAIR_SCANNER_WITHOUT_AREA, REPAIR_TRAIN_PREFIX
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -56,6 +57,37 @@ class ScannerWithoutAreaRepairFlow(RepairsFlow):
         )
 
 
+class TrainRoomRepairFlow(RepairsFlow):
+    """Handler for the "train it?" issue: ask which room the device is in and start training."""
+
+    def __init__(self, hass: HomeAssistant, device_key: str) -> None:
+        """Store hass (to reach the coordinator) and the address of the device to train."""
+        self._hass = hass
+        self._device_key = device_key
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Ask for the room, then start a training run on the device."""
+        coordinator = next(
+            (
+                cast("BermudaConfigEntry", entry).runtime_data.coordinator
+                for entry in self._hass.config_entries.async_entries(DOMAIN)
+                if entry.state is ConfigEntryState.LOADED
+            ),
+            None,
+        )
+        device = coordinator.devices.get(self._device_key) if coordinator else None
+        if coordinator is None or device is None:
+            return self.async_abort(reason="device_gone")
+        if user_input is not None:
+            coordinator.start_training(device, user_input["area"])
+            return self.async_create_entry(title="", data={})
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({vol.Required("area"): AreaSelector()}),
+            description_placeholders={"device": device.name},
+        )
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant,
     issue_id: str,
@@ -65,5 +97,7 @@ async def async_create_fix_flow(
     if issue_id == REPAIR_SCANNER_WITHOUT_AREA:
         scannerlist = str((data or {}).get("scannerlist", ""))
         return ScannerWithoutAreaRepairFlow(hass, scannerlist)
+    if issue_id.startswith(REPAIR_TRAIN_PREFIX):
+        return TrainRoomRepairFlow(hass, str((data or {}).get("device_key", "")))
     msg = f"unknown repair issue: {issue_id}"
     raise ValueError(msg)

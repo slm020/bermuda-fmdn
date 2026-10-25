@@ -80,6 +80,7 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .coordinator_fmdn import BermudaFmdnMixin
+from .coordinator_learning import BermudaLearningMixin
 from .coordinator_metadevices import BermudaMetadeviceMixin
 from .coordinator_microlocation import BermudaMicrolocationMixin
 from .coordinator_scanners import BermudaScannerMixin
@@ -109,6 +110,7 @@ class BermudaDataUpdateCoordinator(
     BermudaScannerMixin,
     BermudaMetadeviceMixin,
     BermudaFmdnMixin,
+    BermudaLearningMixin,
     BermudaMicrolocationMixin,
     DataUpdateCoordinator[None],
 ):
@@ -284,6 +286,7 @@ class BermudaDataUpdateCoordinator(
 
         # Micro-location (sub-area RF fingerprinting) + the MCP-friendly services.
         self._microloc_init(hass, entry)
+        self._learning_init(hass, entry)
 
         # Register for newly discovered / changed BLE devices
         self.config_entry.async_on_unload(
@@ -653,6 +656,11 @@ class BermudaDataUpdateCoordinator(
             # contact, ...) can win the device's area over BLE at a virtual distance.
             self._apply_area_entity_overrides()
             _mark("area_overrides")
+
+            # Phase 4a2: score how well each tracked device's room is being recognised, prompt to
+            # train the ones that keep going wrong, and let trained rooms settle genuine doubt.
+            self._refresh_learning()
+            _mark("learning")
 
             # Phase 4b: refine to a named "micro-location" (eg Key hook) where a
             # saved fingerprint matches. Purely additive — never alters the Area.

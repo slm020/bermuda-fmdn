@@ -105,6 +105,9 @@
           "moving": "Moving",
           "stationary": "Stationary"
         }
+      },
+      "training_room": {
+        "name": "Training room"
       }
     },
     "sensor": {
@@ -162,6 +165,14 @@
       "visible_device_count": {
         "name": "Visible device count"
       }
+    },
+    "button": {
+      "learn_room": {
+        "name": "Learn this room"
+      },
+      "reset_learning": {
+        "name": "Reset room learning"
+      }
     }
   },
   "exceptions": {
@@ -192,6 +203,20 @@
         }
       },
       "title": "Some Bluetooth Proxies don't have an AREA"
+    },
+    "room_confidence_low": {
+      "title": "{device}'s room is hard to pin down",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Train {device}",
+            "description": "Bermuda keeps flip-flopping between {areas} for {device}. You can teach it what {device} looks like in a room: put it in the room, pick the room below and leave it there for about five minutes. Only {device} is affected, and only when Bermuda is unsure.",
+            "data": {
+              "area": "The room {device} is in right now"
+            }
+          }
+        }
+      }
     }
   },
   "options": {
@@ -274,6 +299,20 @@
             },
             "description": "How long until a device is reported Not Home, and how often sensors refresh.",
             "name": "Device tracking"
+          },
+          "learning": {
+            "name": "Room learning",
+            "description": "Bermuda asks to be taught a device's rooms only when it keeps getting them wrong.",
+            "data": {
+              "learning_enabled": "Suggest training for poorly-recognised devices",
+              "learning_threshold": "Confidence threshold (0-1)",
+              "learning_sustained": "Seconds of poor confidence before suggesting"
+            },
+            "data_description": {
+              "learning_enabled": "Turns room-confidence monitoring, training prompts and trained-room matching on or off. Devices you haven't trained are never changed.",
+              "learning_threshold": "Recognition confidence below this counts as poor. 0.5 is a good start.",
+              "learning_sustained": "How long confidence must stay poor before a training prompt appears."
+            }
           }
         },
         "title": "Global settings"
@@ -488,6 +527,30 @@
         }
       },
       "name": "Where is"
+    },
+    "learn_room": {
+      "name": "Learn room",
+      "description": "Teach Bermuda what a tracked device looks like in a room. Leave the device in that room for about five minutes while it collects samples. Afterwards, whenever Bermuda is unsure which room the device is in, it checks the trained rooms.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "The tracked device. A device name, MAC/UUID, or Home Assistant device id."
+        },
+        "area": {
+          "name": "Area",
+          "description": "The Home Assistant area the device is in right now."
+        }
+      }
+    },
+    "reset_learning": {
+      "name": "Reset room learning",
+      "description": "Forget every room trained for a device.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "The tracked device. A device name, MAC/UUID, or Home Assistant device id."
+        }
+      }
     }
   }
 }

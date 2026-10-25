@@ -84,6 +84,17 @@
           "moving": "Moving",
           "stationary": "Stationary"
         }
+      },
+      "training_room": {
+        "name": "Training room"
+      }
+    },
+    "button": {
+      "learn_room": {
+        "name": "Learn this room"
+      },
+      "reset_learning": {
+        "name": "Reset room learning"
       }
     }
   },
@@ -112,6 +123,20 @@
           "confirm": {
             "title": "Assign areas to your Bluetooth proxies",
             "description": "Bermuda cannot place devices seen by a proxy that has no Area. The following proxies are missing an area assignment:\n\n{scannerlist}\nAssign an area by visiting each proxy's device page (via `Devices and Services`) and clicking the pencil icon in the top-right. Once done, submit this form and Bermuda will re-check immediately."
+          }
+        }
+      }
+    },
+    "room_confidence_low": {
+      "title": "{device}'s room is hard to pin down",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Train {device}",
+            "description": "Bermuda keeps flip-flopping between {areas} for {device}. You can teach it what {device} looks like in a room: put it in the room, pick the room below and leave it there for about five minutes. Only {device} is affected, and only when Bermuda is unsure.",
+            "data": {
+              "area": "The room {device} is in right now"
+            }
           }
         }
       }
@@ -169,6 +194,20 @@
             "data_description": {
               "smoothing_samples": "How many samples to average distance smoothing. Bigger numbers make for slower distance increases. Shortening distances are not affected. 10 or 20 seems good.",
               "max_velocity": "If a reading implies a device is moving away faster than this, we ignore that reading. Humans normally walk at 1.4m/s, if they're holding scissors they move at 3m/s."
+            }
+          },
+          "learning": {
+            "name": "Room learning",
+            "description": "Bermuda asks to be taught a device's rooms only when it keeps getting them wrong.",
+            "data": {
+              "learning_enabled": "Suggest training for poorly-recognised devices",
+              "learning_threshold": "Confidence threshold (0-1)",
+              "learning_sustained": "Seconds of poor confidence before suggesting"
+            },
+            "data_description": {
+              "learning_enabled": "Turns room-confidence monitoring, training prompts and trained-room matching on or off. Devices you haven't trained are never changed.",
+              "learning_threshold": "Recognition confidence below this counts as poor. 0.5 is a good start.",
+              "learning_sustained": "How long confidence must stay poor before a training prompt appears."
             }
           }
         }
@@ -394,6 +433,30 @@
     "get_config": {
       "name": "Get configuration",
       "description": "Return Bermuda's current calibration, tracked devices, scanners and micro-location count."
+    },
+    "learn_room": {
+      "name": "Learn room",
+      "description": "Teach Bermuda what a tracked device looks like in a room. Leave the device in that room for about five minutes while it collects samples. Afterwards, whenever Bermuda is unsure which room the device is in, it checks the trained rooms.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "The tracked device. A device name, MAC/UUID, or Home Assistant device id."
+        },
+        "area": {
+          "name": "Area",
+          "description": "The Home Assistant area the device is in right now."
+        }
+      }
+    },
+    "reset_learning": {
+      "name": "Reset room learning",
+      "description": "Forget every room trained for a device.",
+      "fields": {
+        "device": {
+          "name": "Device",
+          "description": "The tracked device. A device name, MAC/UUID, or Home Assistant device id."
+        }
+      }
     }
   },
   "config_subentries": {

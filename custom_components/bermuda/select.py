@@ -35,7 +35,13 @@ async def async_setup_entry(
     def device_new(address: str) -> None:
         """Create the mobility select for a newly tracked device."""
         if address not in created_devices:
-            async_add_devices([BermudaMobilityTypeSelect(coordinator, entry, address)], update_before_add=False)
+            async_add_devices(
+                [
+                    BermudaMobilityTypeSelect(coordinator, entry, address),
+                    BermudaTrainingRoomSelect(coordinator, entry, address),
+                ],
+                update_before_add=False,
+            )
             created_devices.append(address)
         coordinator.select_created(address)
 
@@ -70,4 +76,36 @@ class BermudaMobilityTypeSelect(BermudaEntity, SelectEntity, RestoreEntity):
     async def async_select_option(self, option: str) -> None:
         """Set the selected mobility mode."""
         self._device.set_mobility_type(option)
+        self.async_write_ha_state()
+
+
+class BermudaTrainingRoomSelect(BermudaEntity, SelectEntity):
+    """Which room to train this device in; used by the "Learn this room" button."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_translation_key = "training_room"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    @property
+    def unique_id(self) -> str:
+        """Return the unique ID for this training-room select entity."""
+        return f"{self._device.unique_id}_training_room"
+
+    @property
+    def options(self) -> list[str]:
+        """Every Home Assistant area, by name."""
+        return sorted(area.name for area in self.ar.async_list_areas())
+
+    @property
+    def current_option(self) -> str | None:
+        """The chosen training room, if it still exists."""
+        area_id = self.coordinator.training_room.get(self.address)
+        area = self.ar.async_get_area(area_id) if area_id else None
+        return area.name if area else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Remember the chosen room for the Learn button."""
+        if (area := self.ar.async_get_area_by_name(option)) is not None:
+            self.coordinator.training_room[self.address] = area.id
         self.async_write_ha_state()

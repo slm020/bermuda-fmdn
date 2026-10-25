@@ -28,9 +28,11 @@ ICON_DEFAULT_AREA: Final = "mdi:land-plots-marker"
 ICON_DEFAULT_FLOOR: Final = "mdi:selection-marker"  # "mdi:floor-plan"
 # Issue/repair translation keys. If you change these you MUST also update the key in the translations/xx.json files.
 REPAIR_SCANNER_WITHOUT_AREA = "scanner_without_area"
+REPAIR_TRAIN_PREFIX = "train_"  # + slugified device key: "this device's room is poorly recognised, train it?"
 
 # Platforms
 PLATFORMS = [
+    Platform.BUTTON,
     Platform.SENSOR,
     Platform.DEVICE_TRACKER,
     Platform.NUMBER,
@@ -183,6 +185,19 @@ class IrkTypes(Enum):
 # expires adverts at 195 seconds to avoid churning.
 #
 PRUNE_MAX_COUNT = 500  # How many device entries to allow at maximum
+# Confidence-triggered room learning. Learning only ever acts on devices the user has trained.
+CONF_LEARNING_ENABLED, DEFAULT_LEARNING_ENABLED = "learning_enabled", True  # monitoring + "train it?" prompts
+CONF_LEARNING_THRESHOLD, DEFAULT_LEARNING_THRESHOLD = "learning_threshold", 0.5  # confidence below this is "poor"
+CONF_LEARNING_SUSTAINED, DEFAULT_LEARNING_SUSTAINED = "learning_sustained", 600  # seconds poor before prompting
+OPT_MIN_LEARNING_SUSTAINED: Final = 30  # lowest sustained-poor time the options form accepts (seconds)
+LEARN_WINDOW_CYCLES: Final = 20  # recent update cycles scored for confidence
+LEARN_NEAR_EQUAL_MARGIN: Final = 0.25  # nearest scanners in different areas within 25% of each other
+LEARN_SAMPLES: Final = 60  # samples collected by one training run
+LEARN_MIN_SAMPLES: Final = 10  # fewer than this at timeout and the run is discarded
+LEARN_MAX_SECONDS: Final = 300  # a training run gives up after this long
+LEARN_INTERVAL: Final = 5  # seconds between training samples
+LEARN_RECOVERY_BONUS: Final = 0.2  # confidence must exceed threshold by this to withdraw a prompt
+
 # Google Find Hub (FMDN) tags: Eddystone service uuid, frame types, and the metadevice address prefix.
 FMDN_SERVICE_UUID: Final = "FEAA"
 FMDN_FRAME_TYPES: Final = frozenset({0x40, 0x41})

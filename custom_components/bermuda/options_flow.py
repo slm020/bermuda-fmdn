@@ -41,6 +41,9 @@ from .const import (
     CONF_DEVTRACK_TIMEOUT,
     CONF_EXCLUDE_DEVICES,
     CONF_IRK,
+    CONF_LEARNING_ENABLED,
+    CONF_LEARNING_SUSTAINED,
+    CONF_LEARNING_THRESHOLD,
     CONF_MAX_RADIUS,
     CONF_MAX_VELOCITY,
     CONF_REF_POWER,
@@ -50,6 +53,9 @@ from .const import (
     DEFAULT_AREA_ENTITY_DISTANCE,
     DEFAULT_ATTENUATION,
     DEFAULT_DEVTRACK_TIMEOUT,
+    DEFAULT_LEARNING_ENABLED,
+    DEFAULT_LEARNING_SUSTAINED,
+    DEFAULT_LEARNING_THRESHOLD,
     DEFAULT_MAX_RADIUS,
     DEFAULT_MAX_VELOCITY,
     DEFAULT_REF_POWER,
@@ -60,6 +66,7 @@ from .const import (
     NAME,
     OPT_MIN_ATTENUATION,
     OPT_MIN_DEVTRACK_TIMEOUT,
+    OPT_MIN_LEARNING_SUSTAINED,
     OPT_MIN_MAX_RADIUS,
     OPT_MIN_MAX_VELOCITY,
     OPT_MIN_SMOOTHING_SAMPLES,
@@ -295,6 +302,25 @@ class BermudaOptionsFlowHandler(OptionsFlow):
                             vol.Required(
                                 CONF_MAX_VELOCITY, default=_opt(CONF_MAX_VELOCITY, DEFAULT_MAX_VELOCITY)
                             ): _float(OPT_MIN_MAX_VELOCITY),
+                        }
+                    ),
+                    {"collapsed": True},
+                ),
+                vol.Optional("learning"): section(
+                    vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_LEARNING_ENABLED,
+                                default=bool(self.options.get(CONF_LEARNING_ENABLED, DEFAULT_LEARNING_ENABLED)),
+                            ): bool,
+                            vol.Required(
+                                CONF_LEARNING_THRESHOLD,
+                                default=_opt(CONF_LEARNING_THRESHOLD, DEFAULT_LEARNING_THRESHOLD),
+                            ): _float(0.0, 1.0),
+                            vol.Required(
+                                CONF_LEARNING_SUSTAINED,
+                                default=_opt(CONF_LEARNING_SUSTAINED, DEFAULT_LEARNING_SUSTAINED),
+                            ): _int(OPT_MIN_LEARNING_SUSTAINED),
                         }
                     ),
                     {"collapsed": True},

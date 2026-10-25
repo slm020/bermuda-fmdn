@@ -88,6 +88,28 @@ recognised. Bermuda then asks it "whose tag is this?" for every Find Hub advert 
 > This fork keeps the `bermuda` domain, so remove the upstream/foXaCe Bermuda from HACS before
 > adding this one (your settings and spots are kept; they are stored by Home Assistant, not HACS).
 
+## Room learning (only when a device is poorly recognised)
+
+Bermuda places devices by distance. That works for most things, but some stubborn ones keep
+flip-flopping between two rooms on either side of a wall. Instead of making you train everything,
+this fork watches for those and offers help:
+
+- Bermuda scores how well each tracked device's room is being recognised (flip-flopping back and
+  forth, near-equal readings from two rooms, bouncing between floors). Devices recognised well are
+  never touched.
+- If a device stays poorly recognised for ten minutes, a **Repairs** notice asks *"Train Keys?"*.
+  Pick the room it's in, leave it there for about five minutes, and Bermuda learns what its signal
+  looks like from each proxy in that room. Dismissing the notice means it won't nag again.
+- From then on, only when Bermuda is unsure about that device, it checks the rooms you trained and
+  overrides the distance answer when one clearly fits.
+- You can also train on demand: every tracked device has a **Training room** selector with
+  **Learn this room** and **Reset room learning** buttons, and there are `bermuda.learn_room` /
+  `bermuda.reset_learning` actions.
+- The threshold, the ten minutes, and the whole feature can be changed under *Global options →
+  Room learning*. Turning it off stops the monitoring and the notices.
+
+Learned rooms are stored per device (for Find Hub tags, per tag), so they survive MAC rotation.
+
 ## What you need:
 
 - Home Assistant. The current release of Bermuda requires at least ![haminverbadge]
