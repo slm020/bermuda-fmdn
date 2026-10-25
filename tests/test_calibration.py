@@ -1,7 +1,7 @@
 """
 Tests for the guided calibration wizard and its maths.
 
-The measurement itself (listening to a phone for ~40 s) is replaced by canned readings for the
+The measurement itself (listening to a phone for up to ~60 s) is replaced by canned readings for the
 flow tests, and exercised separately against a fake advert feed with a short listening time.
 """
 
@@ -35,7 +35,7 @@ from tests.test_device_picker import _hear, _scanner, _submit
 
 
 def test_summarise_needs_enough_readings_and_uses_the_median():
-    assert summarise([-60.0] * 3) is None
+    assert summarise([-60.0] * 2) is None
     result = summarise([-60, -61, -60, -59, -60, -90])  # one wild outlier doesn't drag the median
     assert result == Measurement(-60.0, result.spread, 6)
     assert result.count == 6
@@ -219,7 +219,7 @@ async def test_each_failure_asks_to_try_again_with_a_clear_reason(hass, setup_be
     result, lounge, _kitchen = await _wizard(hass, setup_bermuda_entry)
     result = await _pick(hass, result, "calibrate_proxy", proxy=lounge.address)
 
-    readings.append([-60.0] * 3)  # barely heard
+    readings.append([-60.0] * 2)  # barely heard
     result = await _finish_progress(hass, await _submit(hass, result))
     assert result["step_id"] == "calibrate_ready"
     assert result["errors"] == {"base": "no_signal"}
@@ -347,15 +347,20 @@ async def test_progress_screen_counts_down_and_shows_the_readings(hass, setup_be
     base = advert.stamp
     result = await _submit(hass, result)
     seen: list[dict] = []
+    steps: list[str] = []
     for i in range(1, 40):
         if result["type"] not in (FlowResultType.SHOW_PROGRESS, FlowResultType.SHOW_PROGRESS_DONE):
             break
+        steps.append(f"{result['type'].value}:{result['step_id']}")
         if result["type"] is FlowResultType.SHOW_PROGRESS:
             seen.append(result["description_placeholders"])
         advert.rssi, advert.stamp = -60.0 - (i % 3), base + i
         await asyncio.sleep(0.06)
         await hass.async_block_till_done()
         result = await hass.config_entries.options.async_configure(result["flow_id"])
+    # Home Assistant only refreshes the frontend if a finished progress step names a different step than its own.
+    assert set(steps) == {"progress:calibrate_measure", "progress:calibrate_listen"}
+    assert all(a != b for a, b in zip(steps, steps[1:], strict=False))
     assert seen[0]["heard"].startswith("Nothing heard yet")
     assert any("Heard" in p["heard"] and "Latest readings (dBm)" in p["heard"] for p in seen)
     assert all(p["left"].isdigit() for p in seen)
@@ -369,3 +374,24 @@ def test_strings_use_real_line_breaks():
     for name in ("strings.json", "translations/en.json"):
         text = (root / name).read_text(encoding="utf-8")
         assert "\\\\n" not in text, f"{name} has a literal backslash-n instead of a line break"
+
+
+async def test_measurement_ends_early_once_it_has_enough_readings(hass, setup_bermuda_entry, monkeypatch):
+    monkeypatch.setattr(options_calibration, "CHUNK_SECONDS", 0.05)
+    monkeypatch.setattr(options_calibration, "MEASURE_SECONDS", 30)
+    monkeypatch.setattr(options_calibration, "ENOUGH_SAMPLES", 3)
+    monkeypatch.setattr(options_calibration, "SAMPLE_INTERVAL", 0.01)
+    result, lounge, _kitchen = await _wizard(hass, setup_bermuda_entry)
+    advert = setup_bermuda_entry.runtime_data.coordinator.devices["aa:bb:cc:dd:ee:60"].get_scanner(lounge.address)
+    result = await _pick(hass, result, "calibrate_distance", proxy=lounge.address)
+    base = advert.stamp
+    result = await _submit(hass, result)
+    for i in range(1, 60):
+        if result["type"] not in (FlowResultType.SHOW_PROGRESS, FlowResultType.SHOW_PROGRESS_DONE):
+            break
+        advert.rssi, advert.stamp = -60.0, base + i
+        await asyncio.sleep(0.06)
+        await hass.async_block_till_done()
+        result = await hass.config_entries.options.async_configure(result["flow_id"])
+    assert result["step_id"] == "calibrate_ready"  # got on to step 2 long before the 30 s were up
+    assert "Step 2 of 2" in result["description_placeholders"]["instruction"]

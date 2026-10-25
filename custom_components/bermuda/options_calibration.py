@@ -26,6 +26,7 @@ from homeassistant.helpers.selector import (
 
 from .calibration import (
     CHUNK_SECONDS,
+    ENOUGH_SAMPLES,
     FAR_CHOICES,
     FAR_METRES,
     MEASURE_SECONDS,
@@ -229,7 +230,7 @@ class CalibrationFlowMixin(OptionsFlow):
                 "heard": self._cal_heard,
                 "instruction": (
                     f"{step} Hold the phone {where} from **{name}**, screen on and still, with nothing "
-                    f"between you. Press Submit; measuring takes about {MEASURE_SECONDS} seconds."
+                    f"between you. Press Submit; measuring takes up to {MEASURE_SECONDS} seconds."
                 ).strip()
             },
         )
@@ -262,6 +263,17 @@ class CalibrationFlowMixin(OptionsFlow):
 
     async def async_step_calibrate_measure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Measure in short chunks, so the progress screen can show a countdown and the readings."""
+        return await self._measure_chunk("calibrate_measure", "calibrate_listen")
+
+    async def async_step_calibrate_listen(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The other half of the measuring loop.
+
+        Home Assistant only tells the frontend to refresh when a finished progress step names a *different*
+        next step, so the chunks alternate between this step and ``calibrate_measure``.
+        """
+        return await self._measure_chunk("calibrate_listen", "calibrate_measure")
+
+    async def _measure_chunk(self, this_step: str, other_step: str) -> ConfigFlowResult:
         if self._cal_task is None:
             if self._cal_deadline is None:
                 self._cal_samples = []
@@ -270,7 +282,7 @@ class CalibrationFlowMixin(OptionsFlow):
             self._cal_task = self.hass.async_create_task(self._measure())
         if not self._cal_task.done():
             return self.async_show_progress(
-                step_id="calibrate_measure",
+                step_id=this_step,
                 progress_action="measuring",
                 progress_task=self._cal_task,
                 description_placeholders=self._measure_progress_text(),
@@ -279,8 +291,12 @@ class CalibrationFlowMixin(OptionsFlow):
             self._cal_samples = []
         self._cal_samples += self._cal_task.result()
         self._cal_task = None
-        if self._cal_deadline is not None and time.monotonic() < self._cal_deadline:
-            return self.async_show_progress_done(next_step_id="calibrate_measure")
+        if (
+            self._cal_deadline is not None
+            and time.monotonic() < self._cal_deadline
+            and len(self._cal_samples) < ENOUGH_SAMPLES
+        ):
+            return self.async_show_progress_done(next_step_id=other_step)
         return self.async_show_progress_done(next_step_id="calibrate_measured")
 
     async def async_step_calibrate_measured(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
