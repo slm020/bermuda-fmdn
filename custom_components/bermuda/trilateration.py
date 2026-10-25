@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from bluetooth_data_tools import monotonic_time_coarse
+from homeassistant.const import STATE_HOME
 
 from .const import (
     AREA_MAX_AD_AGE,
@@ -354,9 +355,13 @@ def refresh_area_by_min_distance(device: BermudaDevice, options: dict[str, Any])
     state.dominant_history.append(best.advert.scanner_address if best is not None else AREA_NAME_UNKNOWN)
 
     if best is None:
-        # Nothing currently hears the device well enough to place it: report
-        # not_home (the device_tracker timeout handles genuine away) rather than
-        # the explicit "Unknown" area, which we reserve for weak/ambiguous evidence.
+        # Nothing currently hears the device well enough to place it. A beacon that is only heard every
+        # few seconds goes quiet for longer than AREA_MAX_AD_AGE between rooms, so keep the last room
+        # until the device_tracker's own away timeout says it is really gone.
+        if device.area_advert is not None and device.zone == STATE_HOME:
+            return
+        # Otherwise report not_home rather than the explicit "Unknown" area,
+        # which we reserve for weak/ambiguous evidence.
         state.unknown_since = 0.0
         state.ambiguous_since = 0.0
         state.weak_since = 0.0

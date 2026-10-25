@@ -52,10 +52,11 @@ def _advert(scanner: str, area: str | None, rssi_filtered: float, distance: floa
     )
 
 
-def _run(area_advert, adverts, *, mobility=MOBILITY_MOVING, state=None, max_radius=20.0):
+def _run(area_advert, adverts, *, mobility=MOBILITY_MOVING, state=None, max_radius=20.0, zone="not_home"):
     applied: list[tuple[object | None, bool]] = []
     device = SimpleNamespace(
         name="dev",
+        zone=zone,
         area_advert=area_advert,
         adverts={i: ad for i, ad in enumerate(adverts)},
         diag_area_switch=None,
@@ -191,3 +192,25 @@ def test_areatests_defaults_stringify():
     out = str(AreaTests())
     assert "** reason" in out
     assert "None" in out
+
+
+# ---------------------------------------------------------------------------
+# Nobody has a fresh reading
+# ---------------------------------------------------------------------------
+
+
+def test_keeps_the_last_room_while_the_device_is_still_home():
+    """A slow beacon goes quiet between rooms: don't flash not_home before the away timeout."""
+    last = _advert("s1", "Kitchen", -70.0, 3.0)
+    last.stamp = NOW - 600  # far older than AREA_MAX_AD_AGE: no contender
+    device, applied = _run(last, [last], zone="home")
+    assert applied == []  # untouched
+    assert device.area_advert is last
+
+
+def test_reports_not_home_once_the_away_timeout_has_passed():
+    last = _advert("s1", "Kitchen", -70.0, 3.0)
+    last.stamp = NOW - 600
+    device, applied = _run(last, [last], zone="not_home")
+    assert applied == [(None, False)]
+    assert device.area_advert is None
