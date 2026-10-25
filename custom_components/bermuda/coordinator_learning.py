@@ -131,8 +131,8 @@ class BermudaLearningMixin:
             self._learning_advance_training(device, live, now)
 
             tracker = self._confidence.setdefault(key, ConfidenceTracker())
-            tracker.add(device.area_id, device.floor_id, self._learning_margin(device))
-            result = tracker.result()
+            tracker.add(now, device.area_id, device.floor_id, self._learning_margin(device))
+            result = tracker.result(now)
 
             if profiles := self.room_profiles.get(key):
                 # Trained devices don't need prompting; trained rooms only step in when
@@ -204,11 +204,20 @@ class BermudaLearningMixin:
         self._train_prompts.add(device.address)
         _LOGGER.debug("Room confidence for %s is poor (%s); offered training", device.name, result)
 
-    def _withdraw_train_prompt(self, key: str) -> None:
-        """Remove a device's prompt if one is open."""
-        if key in self._train_prompts:
-            ir.async_delete_issue(self.hass, DOMAIN, f"{REPAIR_TRAIN_PREFIX}{slugify(key)}")
-            self._train_prompts.discard(key)
+    def _withdraw_train_prompt(self, key: str, *, force: bool = False) -> None:
+        """
+        Remove a device's prompt if one is open.
+
+        A prompt the user dismissed is left in the issue registry (marked dismissed) so that it
+        stays dismissed if confidence drops again; ``force`` (the user acted on the device) deletes it.
+        """
+        if key not in self._train_prompts:
+            return
+        self._train_prompts.discard(key)
+        issue_id = f"{REPAIR_TRAIN_PREFIX}{slugify(key)}"
+        issue = ir.async_get(self.hass).async_get_issue(DOMAIN, issue_id)
+        if force or issue is None or issue.dismissed_version is None:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
 
     # --- applying trained rooms ---------------------------------------------
 
@@ -244,7 +253,7 @@ class BermudaLearningMixin:
         self._training[device.address] = _TrainingRun(
             area_id, now, RoomProfile(area_id), last_sample=now - LEARN_INTERVAL
         )
-        self._withdraw_train_prompt(device.address)
+        self._withdraw_train_prompt(device.address, force=True)
         return self.training_status(device.address)
 
     def training_status(self, address: str) -> dict[str, Any]:
@@ -298,7 +307,7 @@ class BermudaLearningMixin:
         self._training.pop(device.address, None)
         self._confidence.pop(device.address, None)
         self._low_since.pop(device.address, None)
-        self._withdraw_train_prompt(device.address)
+        self._withdraw_train_prompt(device.address, force=True)
         return self.room_profiles.reset(device.address)
 
     def learning_diagnostics(self) -> dict[str, Any]:

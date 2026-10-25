@@ -49,55 +49,86 @@ from tests.test_services import _make_scanner, _make_tracked_device, _set_distan
 # ---------------------------------------------------------------------------
 
 
-def _fill(tracker: ConfidenceTracker, rows):
-    for area, floor, margin in rows:
-        tracker.add(area, floor, margin)
-    return tracker.result()
+def _run(tracker: ConfidenceTracker, script, *, step: float = 1.0, start: float = 0.0):
+    """
+    Feed a tracker like the real coordinator: one cycle per ``step`` seconds.
+
+    ``script`` is a list of (area, floor, seconds_in_that_state, margin); the area stays
+    constant for that many seconds (long runs, as real hysteresis gives), cycling every second.
+    """
+    now = start
+    for area, floor, seconds, margin in script:
+        for _ in range(int(seconds / step)):
+            tracker.add(now, area, floor, margin)
+            now += step
+    return tracker.result(now), now
 
 
-def test_confidence_is_untroubled_until_the_window_is_half_full():
-    result = _fill(ConfidenceTracker(20), [("a", "f", 0.5), ("b", "f", 0.5)] * 4)  # 8 < 10, and flapping
-    assert result.score == 1.0
+def test_confidence_is_untroubled_until_half_a_window_has_been_observed():
+    result, _ = _run(ConfidenceTracker(300), [("a", "f", 20, 0.5), ("b", "f", 20, 0.5), ("a", "f", 20, 0.5)])
+    assert result.score == 1.0  # 60s < 150s, even though it flipped
     assert result.top_areas == ()
 
 
 def test_stable_room_has_full_confidence():
-    result = _fill(ConfidenceTracker(20), [("kitchen", "ground", 2.0)] * 20)
+    result, _ = _run(ConfidenceTracker(300), [("kitchen", "ground", 400, 2.0)])
     assert result.score == 1.0
     assert result.top_areas == ("kitchen",)
 
 
-def test_flapping_between_two_rooms_is_poor_confidence():
-    result = _fill(ConfidenceTracker(20), [("lounge" if i % 2 else "hall", "ground", 0.5) for i in range(20)])
+def test_flapping_with_realistic_dwell_is_poor_confidence():
+    # With hysteresis a hard-to-place device holds each answer for 20-30 s: AAAA BBBB AAAA BBBB ...
+    script = [("lounge" if i % 2 else "hall", "ground", 25, 0.5) for i in range(14)]
+    result, _ = _run(ConfidenceTracker(300), script)
     assert result.flapping == pytest.approx(1.0)
-    assert result.score == 0.0
+    assert result.score < 0.5
     assert set(result.top_areas) == {"lounge", "hall"}
 
 
+def test_one_trip_to_the_next_room_and_back_is_not_flapping():
+    result, _ = _run(
+        ConfidenceTracker(300),
+        [("kitchen", "f", 120, 1.0), ("lounge", "f", 150, 1.0), ("kitchen", "f", 130, 1.0)],
+    )
+    assert result.flapping == 0.0  # the detour lasted 150 s: someone moved, nothing flapped
+    assert result.score == 1.0
+
+
 def test_walking_through_rooms_is_not_flapping():
-    rows = [("a", "f", 1.0)] * 7 + [("b", "f", 1.0)] * 7 + [("c", "f", 1.0)] * 6
-    result = _fill(ConfidenceTracker(20), rows)
+    result, _ = _run(
+        ConfidenceTracker(300),
+        [("a", "f", 100, 1.0), ("b", "f", 100, 1.0), ("c", "f", 100, 1.0), ("d", "f", 100, 1.0)],
+    )
     assert result.flapping == 0.0
     assert result.score == 1.0
 
 
 def test_near_equal_readings_alone_never_trigger_a_prompt():
-    result = _fill(ConfidenceTracker(20), [("hall", "f", 0.05)] * 20)
+    result, _ = _run(ConfidenceTracker(300), [("hall", "f", 400, 0.05)])
     assert result.near_equal == 1.0
     assert result.score == pytest.approx(0.6)  # stable but ambiguous: above the 0.5 default threshold
 
 
 def test_floor_bouncing_is_poor_confidence():
-    result = _fill(ConfidenceTracker(20), [("a", "up" if i % 2 else "down", None) for i in range(20)])
+    script = [("a", "up" if i % 2 else "down", 20, None) for i in range(16)]
+    result, _ = _run(ConfidenceTracker(300), script)
     assert result.floor_bounce == pytest.approx(1.0)
-    assert result.score == 0.0
+    assert result.score < 0.5
 
 
-def test_clear_forgets_the_window():
-    tracker = ConfidenceTracker(20)
-    _fill(tracker, [("a" if i % 2 else "b", "f", None) for i in range(20)])
+def test_old_history_ages_out_of_the_window():
+    tracker = ConfidenceTracker(300)
+    _result, now = _run(tracker, [("lounge" if i % 2 else "hall", "f", 25, 0.5) for i in range(14)])
+    assert tracker.result(now).score < 0.5
+    settled, _ = _run(tracker, [("hall", "f", 400, 2.0)], start=now)
+    assert settled.score == 1.0
+
+
+def test_clear_forgets_the_history():
+    tracker = ConfidenceTracker(300)
+    _result, now = _run(tracker, [("a" if i % 2 else "b", "f", 25, None) for i in range(14)])
     tracker.clear()
-    assert tracker.result().score == 1.0
+    assert tracker.result(now).score == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -263,70 +294,98 @@ def _cycle(coordinator, keys, area_id: str | None, floor_id: str | None = "groun
     coordinator._refresh_learning()  # noqa: SLF001
 
 
+def _dwell(coordinator, keys, clock, area_id: str | None, seconds: int, floor_id: str | None = "ground"):
+    """Stay in ``area_id`` for ``seconds``, one update cycle per second."""
+    for _ in range(seconds):
+        clock.now += 1
+        _cycle(coordinator, keys, area_id, floor_id)
+
+
+def _flap(coordinator, keys, clock, area_a, area_b, *, seconds: int, spell: int = 25):
+    """Flip between two rooms with realistic hysteresis: each answer held for ``spell`` seconds."""
+    for i in range(seconds // spell):
+        _dwell(coordinator, keys, clock, area_a if i % 2 else area_b, spell)
+
+
 def _issue(hass, keys):
     return ir.async_get(hass).async_get_issue(DOMAIN, f"{REPAIR_TRAIN_PREFIX}{slugify(keys.address)}")
 
 
 async def test_flapping_device_gets_a_training_prompt_after_the_sustained_time(hass, setup_bermuda_entry, clock):
     coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
-    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)  # both rooms read near-equal
+    start = clock.now
 
-    for i in range(20):  # fill the window with flip-flopping
-        _cycle(coordinator, keys, kitchen.id if i % 2 else hall.id)
-    assert _issue(hass, keys) is None  # poor, but not for long enough yet
-
-    clock.now += 599
-    _cycle(coordinator, keys, kitchen.id)
+    # Half a window of observation is needed before confidence can be judged, then the device must
+    # stay poor for the sustained time (default 300 s) before anyone is bothered.
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=325)
     assert _issue(hass, keys) is None
-    clock.now += 2
-    _cycle(coordinator, keys, hall.id)
+
+    for _ in range(40):
+        _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=25)
+        if _issue(hass, keys) is not None:
+            break
     issue = _issue(hass, keys)
     assert issue is not None
+    assert 450 <= clock.now - start <= 800
     assert issue.is_fixable is True
     assert issue.translation_placeholders["device"] == "Keys"
     assert "Kitchen" in issue.translation_placeholders["areas"]
     assert coordinator.learning_diagnostics()["open_prompts"] == 1
 
-    # Still ambiguous (rooms read near-equal) so the prompt stays; once readings separate and the
-    # answer settles, it is withdrawn.
-    for _ in range(20):
-        _cycle(coordinator, keys, kitchen.id)
+    # Still flapping, so the prompt stays. Once readings separate and the answer settles it is withdrawn.
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=100)
     assert _issue(hass, keys) is not None
     _hear(keys, s1, s2, -50, -75, d1=1.0, d2=4.0)
-    for _ in range(20):
-        _cycle(coordinator, keys, kitchen.id)
+    _dwell(coordinator, keys, clock, kitchen.id, 400)
     assert _issue(hass, keys) is None
     assert coordinator.learning_diagnostics()["open_prompts"] == 0
 
 
+async def test_a_dismissed_prompt_stays_dismissed_if_confidence_drops_again(hass, setup_bermuda_entry, clock):
+    coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=800)
+    issue = _issue(hass, keys)
+    assert issue is not None
+
+    ir.async_ignore_issue(hass, DOMAIN, issue.issue_id, True)  # the user dismisses it
+    _hear(keys, s1, s2, -50, -75, d1=1.0, d2=4.0)
+    _dwell(coordinator, keys, clock, kitchen.id, 400)  # recovers: must not erase the dismissal
+    assert _issue(hass, keys).dismissed_version is not None
+
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=800)  # regresses
+    assert _issue(hass, keys).dismissed_version is not None  # still dismissed: no nagging
+
+    coordinator.start_training(keys, kitchen.id)  # acting on the device clears it for good
+    assert _issue(hass, keys) is None
+
+
 async def test_well_recognised_device_is_never_prompted(hass, setup_bermuda_entry, clock):
-    coordinator, keys, s1, s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
-    _hear(keys, s1, s2, -50, -75)
-    for _ in range(40):
-        clock.now += 60
-        _cycle(coordinator, keys, kitchen.id)
+    coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
+    _hear(keys, s1, s2, -50, -75, d1=1.0, d2=4.0)
+    _dwell(coordinator, keys, clock, kitchen.id, 1500)
+    for _ in range(3):  # ordinary use: wander to the next room for a few minutes and come back
+        _dwell(coordinator, keys, clock, hall.id, 200)
+        _dwell(coordinator, keys, clock, kitchen.id, 400)
     assert _issue(hass, keys) is None
 
 
 async def test_prompts_can_be_turned_off(hass, setup_bermuda_entry, clock):
     coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
     coordinator.options[CONF_LEARNING_ENABLED] = False
-    _hear(keys, s1, s2, -50, -55)
-    for i in range(40):
-        clock.now += 60
-        _cycle(coordinator, keys, kitchen.id if i % 2 else hall.id)
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=1000)
     assert _issue(hass, keys) is None
 
 
 async def test_threshold_and_sustained_time_are_configurable(hass, setup_bermuda_entry, clock):
     coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
     coordinator.options[CONF_LEARNING_SUSTAINED] = 30
-    coordinator.options[CONF_LEARNING_THRESHOLD] = 0.9
-    _hear(keys, s1, s2, -50, -55)
-    for i in range(20):
-        _cycle(coordinator, keys, kitchen.id if i % 2 else hall.id)
-    clock.now += 31
-    _cycle(coordinator, keys, kitchen.id)
+    coordinator.options[CONF_LEARNING_THRESHOLD] = 0.9  # near-equal readings alone (0.6) now count as poor
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    _dwell(coordinator, keys, clock, kitchen.id, 200)  # 150 s to build evidence, 30 s sustained
     assert _issue(hass, keys) is not None
 
 
@@ -412,11 +471,8 @@ async def test_start_training_validates_its_arguments(hass, setup_bermuda_entry,
 
 async def test_starting_training_withdraws_an_open_prompt(hass, setup_bermuda_entry, clock):
     coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
-    _hear(keys, s1, s2, -50, -55)
-    for i in range(20):
-        _cycle(coordinator, keys, kitchen.id if i % 2 else hall.id)
-    clock.now += 700
-    _cycle(coordinator, keys, kitchen.id)
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=800)
     assert _issue(hass, keys) is not None
     coordinator.start_training(keys, kitchen.id)
     assert _issue(hass, keys) is None
@@ -435,33 +491,28 @@ async def test_trained_room_steps_in_only_when_confidence_is_poor(hass, setup_be
     # Live readings look like the Hall, but plain distance (wrongly) says Kitchen.
     _hear(keys, s1, s2, -75, -50, d1=1.0, d2=1.1, stamp=900.0)
 
-    # Confidence is full (steady Kitchen): a trained room never overrides a confident answer.
-    for _ in range(20):
-        _cycle(coordinator, keys, kitchen.id)
+    # Distance is steady, so confidence is full: a trained room never overrides a confident answer.
+    _dwell(coordinator, keys, clock, kitchen.id, 400)
     assert keys.area_id == kitchen.id
 
     # Now the distance answer starts flapping: confidence drops and the trained Hall wins.
-    for i in range(20):
-        _cycle(coordinator, keys, kitchen.id if i % 2 else hall.id)
-    _cycle(coordinator, keys, kitchen.id)
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=200)
+    _dwell(coordinator, keys, clock, kitchen.id, 1)
     assert keys.area_id == hall.id
     assert keys.area_advert is None  # an override, not a winning advert
 
 
 async def test_trained_device_is_not_prompted_and_unmatched_readings_change_nothing(hass, setup_bermuda_entry, clock):
     coordinator, keys, s1, s2, kitchen, hall = await _trained_keys(hass, setup_bermuda_entry, clock)
-    _hear(keys, s1, s2, -90, -40, stamp=900.0)  # looks like neither trained room
-    for i in range(40):
-        clock.now += 60
-        _cycle(coordinator, keys, kitchen.id if i % 2 else hall.id)
+    _hear(keys, s1, s2, -90, -40, d1=2.0, d2=2.1, stamp=900.0)  # looks like neither trained room
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=900)
     assert _issue(hass, keys) is None
-    assert keys.area_id in {kitchen.id, hall.id}  # untouched by the matcher
+    _dwell(coordinator, keys, clock, kitchen.id, 1)
+    assert keys.area_id == kitchen.id  # untouched by the matcher
 
-    # Already in the matched room: nothing to override.
-    _hear(keys, s1, s2, -75, -50, stamp=901.0)
-    for i in range(20):
-        _cycle(coordinator, keys, hall.id if i % 2 else kitchen.id)
-    _cycle(coordinator, keys, hall.id)
+    # Readings that look like the Hall while the answer is already Hall: nothing to override.
+    _hear(keys, s1, s2, -75, -50, d1=2.0, d2=2.1, stamp=901.0)
+    _dwell(coordinator, keys, clock, hall.id, 1)
     assert keys.area_id == hall.id
 
 

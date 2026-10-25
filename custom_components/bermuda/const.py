@@ -188,9 +188,11 @@ PRUNE_MAX_COUNT = 500  # How many device entries to allow at maximum
 # Confidence-triggered room learning. Learning only ever acts on devices the user has trained.
 CONF_LEARNING_ENABLED, DEFAULT_LEARNING_ENABLED = "learning_enabled", True  # monitoring + "train it?" prompts
 CONF_LEARNING_THRESHOLD, DEFAULT_LEARNING_THRESHOLD = "learning_threshold", 0.5  # confidence below this is "poor"
-CONF_LEARNING_SUSTAINED, DEFAULT_LEARNING_SUSTAINED = "learning_sustained", 600  # seconds poor before prompting
+CONF_LEARNING_SUSTAINED, DEFAULT_LEARNING_SUSTAINED = "learning_sustained", 300  # seconds poor before prompting
 OPT_MIN_LEARNING_SUSTAINED: Final = 30  # lowest sustained-poor time the options form accepts (seconds)
-LEARN_WINDOW_CYCLES: Final = 20  # recent update cycles scored for confidence
+LEARN_WINDOW_SECONDS: Final = 300  # how much recent history is scored for confidence
+LEARN_FLAP_FULL: Final = 4  # reversals within the window that count as "completely flapping"
+LEARN_FLAP_MAX_DWELL: Final = 90  # a there-and-back only counts as a flap if the detour lasted under this (s)
 LEARN_NEAR_EQUAL_MARGIN: Final = 0.25  # nearest scanners in different areas within 25% of each other
 LEARN_SAMPLES: Final = 60  # samples collected by one training run
 LEARN_MIN_SAMPLES: Final = 10  # fewer than this at timeout and the run is discarded

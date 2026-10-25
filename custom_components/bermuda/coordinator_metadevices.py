@@ -16,6 +16,7 @@ from .const import (
     _LOGGER_SPAM_LESS,
     CONF_DEVICES,
     DOMAIN_PRIVATE_BLE_DEVICE,
+    METADEVICE_FMDN_DEVICE,
     METADEVICE_IBEACON_DEVICE,
     METADEVICE_TYPE_IBEACON_SOURCE,
     METADEVICE_TYPE_PRIVATE_BLE_SOURCE,
@@ -325,5 +326,11 @@ class BermudaMetadeviceMixin:
             # Done iterating sources, remove any to be dropped
             for source in _sources_to_remove:
                 metadevice.metadevice_sources.remove(source)
+            if METADEVICE_FMDN_DEVICE in metadevice.metadevice_type:
+                # A tag gets a new MAC every ~17 minutes; once pruning has dropped an old
+                # source, drop its copied adverts too or they would pile up forever.
+                live_sources = set(metadevice.metadevice_sources)
+                for stale in [key for key in metadevice.adverts if key[0] not in live_sources]:
+                    del metadevice.adverts[stale]
             if _want_name_update:
                 metadevice.make_name()

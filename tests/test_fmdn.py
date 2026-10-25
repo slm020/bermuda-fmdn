@@ -446,3 +446,21 @@ async def test_resolve_device_passes_ordinary_devices_through(hass, setup_bermud
     orphan.metadevice_type.add(METADEVICE_TYPE_FMDN_SOURCE)
     coordinator.devices[MAC_A] = orphan
     assert coordinator.fmdn_redirect(orphan) is orphan
+
+
+async def test_adverts_of_dropped_sources_do_not_pile_up_on_the_tag(hass, setup_bermuda_entry):
+    coordinator = _coordinator(setup_bermuda_entry)
+    coordinator.fmdn_resolver = FakeTagResolver([TAG])
+    scanner = _make_scanner(coordinator, "11:11:11:11:11:11", "Left", "kitchen")
+    for mac in (MAC_A, MAC_B):
+        source = _source(coordinator, mac)
+        _set_distance(source, scanner, 2.0)
+        coordinator.fmdn_handle_advertisement(source, SERVICE_DATA)
+    coordinator.update_metadevices()
+    meta = coordinator.metadevices[f"{FMDN_ADDRESS_PREFIX}dev1"]
+    assert {key[0] for key in meta.adverts} == {MAC_A, MAC_B}
+
+    # Pruning forgets the old MAC (it drops it from the sources); its copied advert must go too.
+    meta.metadevice_sources.remove(MAC_A)
+    coordinator.update_metadevices()
+    assert {key[0] for key in meta.adverts} == {MAC_B}

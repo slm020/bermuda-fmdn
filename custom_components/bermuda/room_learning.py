@@ -27,7 +27,12 @@ from collections import Counter, deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .const import LEARN_NEAR_EQUAL_MARGIN, LEARN_WINDOW_CYCLES
+from .const import (
+    LEARN_FLAP_FULL,
+    LEARN_FLAP_MAX_DWELL,
+    LEARN_NEAR_EQUAL_MARGIN,
+    LEARN_WINDOW_SECONDS,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -64,44 +69,77 @@ class ConfidenceResult:
     top_areas: tuple[str, ...]  # most-seen areas in the window, for the user-facing prompt
 
 
+def _quick_returns(changes: list[tuple[float, str]], max_dwell: float) -> int:
+    """
+    Count A -> B -> A returns where the detour to B was brief.
+
+    ``changes`` are (time, value) with consecutive values already different. A device that
+    wanders off and stays away (A -> B for minutes) is moving, not flapping.
+    """
+    return sum(
+        1
+        for i in range(2, len(changes))
+        if changes[i][1] == changes[i - 2][1] and changes[i][0] - changes[i - 1][0] <= max_dwell
+    )
+
+
 class ConfidenceTracker:
-    """Score room recognition from a short rolling window of update cycles."""
+    """
+    Score room recognition from the recent *time-ordered* history of a device.
 
-    def __init__(self, window: int = LEARN_WINDOW_CYCLES) -> None:
-        """Create an empty tracker holding the last ``window`` cycles."""
+    Area selection has hysteresis, so a device that is hard to place looks like long runs
+    (AAAAAA BBBBBB AAAAAA), not one-cycle blips. The tracker therefore records area/floor
+    *changes* with timestamps, and judges quick there-and-back changes over a time window,
+    independent of how often the coordinator happens to cycle.
+    """
+
+    def __init__(self, window: float = LEARN_WINDOW_SECONDS) -> None:
+        """Create an empty tracker scoring the last ``window`` seconds."""
         self._window = window
-        self._samples: deque[tuple[str | None, str | None, float | None]] = deque(maxlen=window)
+        self._started: float | None = None
+        self._areas: deque[tuple[float, str]] = deque()  # (time, area) at each change
+        self._floors: deque[tuple[float, str]] = deque()  # (time, floor) at each change
+        self._margins: deque[tuple[float, bool]] = deque()  # (time, readings were near-equal)
 
-    def add(self, area_id: str | None, floor_id: str | None, margin: float | None) -> None:
+    def add(self, now: float, area_id: str | None, floor_id: str | None, margin: float | None) -> None:
         """
-        Record one cycle.
+        Record one cycle at monotonic time ``now``.
 
-        ``margin`` is how much farther the nearest scanner in a *different* area
-        is than the winning one, as a fraction (0.1 = 10% farther); ``None`` when
-        no other area can hear the device.
+        ``margin`` is how much farther the nearest scanner in a *different* area is than the
+        winning one, as a fraction (0.1 = 10% farther); ``None`` when no other area can hear
+        the device.
         """
-        self._samples.append((area_id, floor_id, margin))
+        if self._started is None:
+            self._started = now
+        if area_id is not None and (not self._areas or self._areas[-1][1] != area_id):
+            self._areas.append((now, area_id))
+        if floor_id is not None and (not self._floors or self._floors[-1][1] != floor_id):
+            self._floors.append((now, floor_id))
+        if margin is not None:
+            self._margins.append((now, margin < LEARN_NEAR_EQUAL_MARGIN))
+        cutoff = now - self._window
+        for series in (self._areas, self._floors, self._margins):
+            while series and series[0][0] < cutoff:
+                series.popleft()
 
     def clear(self) -> None:
-        """Forget the window (eg after training)."""
-        self._samples.clear()
+        """Forget the history (eg after training)."""
+        self._started = None
+        self._areas.clear()
+        self._floors.clear()
+        self._margins.clear()
 
-    def result(self, near_margin: float = LEARN_NEAR_EQUAL_MARGIN) -> ConfidenceResult:
-        """Score the window. Until it is half full there is no evidence of a problem (score 1.0)."""
-        n = len(self._samples)
-        if n < self._window // 2:
+    def result(self, now: float) -> ConfidenceResult:
+        """Score the window. Until half a window has been observed there is no evidence of a problem."""
+        if self._started is None or now - self._started < self._window / 2:
             return ConfidenceResult(1.0, 0.0, 0.0, 0.0, ())
-        areas = [a for a, _f, _m in self._samples if a is not None]
-        # Flapping = A -> B -> A reversals. A device genuinely walking A -> B -> C does not count.
-        reversals = sum(1 for i in range(2, len(areas)) if areas[i] == areas[i - 2] != areas[i - 1])
-        flapping = reversals / max(1, len(areas) - 2)
-        near_equal = sum(1 for _a, _f, m in self._samples if m is not None and m < near_margin) / n
-        floors = [f for _a, f, _m in self._samples if f is not None]
-        floor_bounce = sum(1 for i in range(1, len(floors)) if floors[i] != floors[i - 1]) / max(1, len(floors) - 1)
+        flapping = min(1.0, _quick_returns(list(self._areas), LEARN_FLAP_MAX_DWELL) / LEARN_FLAP_FULL)
+        floor_bounce = min(1.0, _quick_returns(list(self._floors), LEARN_FLAP_MAX_DWELL) / (LEARN_FLAP_FULL / 2))
+        near_equal = sum(1 for _t, near in self._margins if near) / len(self._margins) if self._margins else 0.0
         penalty = min(
             1.0, WEIGHT_FLAPPING * flapping + WEIGHT_NEAR_EQUAL * near_equal + WEIGHT_FLOOR_BOUNCE * floor_bounce
         )
-        top = tuple(area for area, _count in Counter(areas).most_common(2))
+        top = tuple(area for area, _count in Counter(a for _t, a in self._areas).most_common(2))
         return ConfidenceResult(round(1.0 - penalty, 3), flapping, near_equal, floor_bounce, top)
 
 
