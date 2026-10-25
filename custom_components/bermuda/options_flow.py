@@ -84,6 +84,7 @@ from .const import (
 )
 from .device_kind import device_facts, device_kind, device_label, strongest_rssi
 from .helpers import is_blocked, is_device_selectable
+from .options_calibration import CalibrationFlowMixin
 from .options_text import _DESCRIPTION_TEXTS
 from .private_enrol import async_enrol_private_device
 from .util import mac_redact
@@ -95,7 +96,7 @@ if TYPE_CHECKING:
     from .coordinator import BermudaDataUpdateCoordinator
 
 
-class BermudaOptionsFlowHandler(OptionsFlow):
+class BermudaOptionsFlowHandler(CalibrationFlowMixin, OptionsFlow):
     """Config flow options handler for bermuda."""
 
     def __init__(self) -> None:
@@ -187,7 +188,7 @@ class BermudaOptionsFlowHandler(OptionsFlow):
         # so every menu entry is localised like the rest of the flow.
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add", "hide", "identify", "tracked", "hidden", "google", "settings"],
+            menu_options=["add", "hide", "identify", "calibrate", "google", "manage", "settings"],
             description_placeholders=messages,
         )
 
@@ -404,8 +405,12 @@ class BermudaOptionsFlowHandler(OptionsFlow):
         """Everything that is not about choosing devices."""
         return self.async_show_menu(
             step_id="settings",
-            menu_options=["globalopts", "categories", "area_entities", "enrol_private"],
+            menu_options=["globalopts", "area_entities", "enrol_private"],
         )
+
+    async def async_step_manage(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """What you've chosen to track, hide, or auto-track."""
+        return self.async_show_menu(step_id="manage", menu_options=["tracked", "hidden", "categories"])
 
     async def async_step_categories(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Auto-track every device of a category."""

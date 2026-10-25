@@ -280,7 +280,13 @@ async def test_service_set_scanner_offset(hass, setup_bermuda_entry):
         return_response=True,
     )
     assert resp["updated"] is True
-    assert setup_bermuda_entry.options.get(CONF_RSSI_OFFSETS, {}).get(scanner.address) == 4
+    # offsets live in calibration subentries (the source of truth since config v2), not the options dict
+    saved = {
+        se.data["scanner"]: se.data["rssi_offset"]
+        for se in setup_bermuda_entry.subentries.values()
+        if se.subentry_type == "calibration"
+    }
+    assert saved[scanner.address] == 4
 
 
 async def test_service_set_scanner_offset_not_a_scanner_raises(hass, setup_bermuda_entry):

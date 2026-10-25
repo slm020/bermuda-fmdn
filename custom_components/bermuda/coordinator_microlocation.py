@@ -21,6 +21,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
+from .calibration import apply_scanner_offsets
 from .const import (
     _LOGGER,
     CONF_ATTENUATION,
@@ -40,6 +41,8 @@ from .const import (
     MICROLOC_CALIBRATION_SAMPLES,
     MICROLOC_HYSTERESIS_CYCLES,
     MICROLOC_MIN_USEFUL_SCANNERS,
+    OPT_RSSI_OFFSET_MAX,
+    OPT_RSSI_OFFSET_MIN,
 )
 from .location_fingerprints import Fingerprint, FingerprintMatcher, FingerprintStore
 from .util import mac_norm
@@ -513,10 +516,10 @@ class BermudaMicrolocationMixin:
         if scanner.address not in self.scanner_list:
             msg = f"'{scanner.name}' is not a known Bermuda scanner/proxy."
             raise ServiceValidationError(msg)
-        offset = max(min(call.data["rssi_offset"], 127), -127)
-        offsets = dict(self.config_entry.options.get(CONF_RSSI_OFFSETS, {}))
-        offsets[scanner.address] = offset
-        self._update_options(**{CONF_RSSI_OFFSETS: offsets})
+        offset = max(min(call.data["rssi_offset"], OPT_RSSI_OFFSET_MAX), OPT_RSSI_OFFSET_MIN)
+        # Offsets live in calibration subentries (the source of truth since config v2); writing the
+        # legacy options dict would be overwritten at the next load.
+        apply_scanner_offsets(self.hass, self.config_entry, {scanner.address: offset})
         return {"updated": True, "scanner": scanner.name, "rssi_offset": offset}
 
     async def service_get_config(self, call: ServiceCall) -> ServiceResponse:

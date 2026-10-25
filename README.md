@@ -107,14 +107,30 @@ now a short list, and each job has its own screen with tick boxes:
 - **Identify a device**: pick one and see everything Bermuda knows: company id, service ids, the raw
   data, and which proxies hear it at what strength. Useful when a label says "Unidentified device".
 - **Google tags**: whether your Google sign-in is connected, which tags Bermuda knows, and the steps to connect.
-- **Tracked devices** / **Hidden devices**: tick boxes for everything you've chosen; untick to undo.
-- **Settings**: calibration and learning, track whole categories, presence sensors, enrol an iPhone/Watch.
+- **Calibrate distances**: a guided wizard, see below.
+- **Manage**: tick boxes for tracked devices, hidden devices and tracked categories; untick to undo.
+- **Settings**: advanced numbers (distance model, learning), presence sensors, enrol a phone by key.
 
 Each device is labelled with what it is ("Windows PC / Microsoft device", "AirPods / Beats earbuds",
-"Heart-rate monitor"), its name if it has one, and how close it is: *"right by Study"*, *"close to
-Living room"*, or *"far from everywhere"* when no proxy hears it strongly. Unidentified
+"Heart-rate monitor"), its name if it has one, and an **estimated distance** to the nearest proxy:
+*"~70 cm from Study"* is probably your phone; *"~3.2 m from Living room"* might be a neighbour a floor
+up; *"far from everywhere"* is more than 10 m. Distances are only as good as the calibration (below).
+Unidentified
 devices show raw clues you can search for, like `company 0x04F2` or `service 0xFE9F`. Bluetooth adverts
 rarely carry an exact model, so the label says only what the device really tells us.
+
+## Calibrating distances
+
+Open **Calibrate distances** and follow the screens; Bermuda does the measuring.
+
+1. Pick the phone you'll hold (screen on).
+2. **Distance**: pick a proxy, hold the phone 1 m from it, press Submit (about 20 seconds), then hold it
+   5 m away in a straight line and press Submit. That sets how Bermuda turns signal strength into metres.
+3. **Even out a proxy** (optional, once per proxy): hold the phone 1 m from it. That corrects for proxies
+   that hear slightly louder or quieter than others.
+4. **Save and finish**. Nothing changes until you save; Discard throws the measurements away.
+
+If a measurement is too jumpy or the phone wasn't heard, it tells you why and asks you to repeat it.
 
 ## Room learning (only when a device is poorly recognised)
 

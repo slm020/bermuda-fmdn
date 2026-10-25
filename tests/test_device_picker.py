@@ -326,9 +326,11 @@ async def _submit(hass, result, **fields):
 
 async def test_main_menu_is_short_and_settings_hold_the_rest(hass, setup_bermuda_entry):
     result = await _menu(hass, setup_bermuda_entry)
-    assert result["menu_options"] == ["add", "hide", "identify", "tracked", "hidden", "google", "settings"]
+    assert result["menu_options"] == ["add", "hide", "identify", "calibrate", "google", "manage", "settings"]
+    result = await _menu(hass, setup_bermuda_entry, "manage")
+    assert result["menu_options"] == ["tracked", "hidden", "categories"]
     result = await _menu(hass, setup_bermuda_entry, "settings")
-    assert result["menu_options"] == ["globalopts", "categories", "area_entities", "enrol_private"]
+    assert result["menu_options"] == ["globalopts", "area_entities", "enrol_private"]
 
 
 async def test_add_lists_strongest_first_with_tick_boxes_and_adds_what_is_ticked(hass, setup_bermuda_entry):
@@ -412,7 +414,7 @@ async def test_hidden_screen_unhides_what_is_unticked(hass, setup_bermuda_entry)
         },
     )
     await hass.async_block_till_done()
-    result = await _menu(hass, setup_bermuda_entry, "hidden")
+    result = await _menu(hass, setup_bermuda_entry, "manage", "hidden")
     assert _options(result, "kinds") == [(kind, kind)]
     labels = dict(_options(result, "devices"))
     assert labels["AA:AA:AA:AA:AA:AA"] == "AA:AA:AA:AA:AA:AA (not seen now)"
@@ -430,7 +432,7 @@ async def test_tracked_screen_untick_stops_tracking(hass, setup_bermuda_entry):
         options={**setup_bermuda_entry.options, CONF_DEVICES: ["AA:BB:CC:DD:EE:11", "AA:AA:AA:AA:AA:AA"]},
     )
     await hass.async_block_till_done()
-    result = await _menu(hass, setup_bermuda_entry, "tracked")
+    result = await _menu(hass, setup_bermuda_entry, "manage", "tracked")
     labels = dict(_options(result, "devices"))
     assert "Windows PC" in labels["AA:BB:CC:DD:EE:11"]
     assert labels["AA:AA:AA:AA:AA:AA"].endswith("(not seen now)")
@@ -494,7 +496,7 @@ async def test_google_tags_screen_lists_known_tags_when_connected(hass, setup_be
 
 
 async def test_categories_screen_persists_choices(hass, setup_bermuda_entry):
-    result = await _menu(hass, setup_bermuda_entry, "settings", "categories")
+    result = await _menu(hass, setup_bermuda_entry, "manage", "categories")
     assert result["step_id"] == "categories"
     result = await _submit(hass, result, track_categories=["ibeacon"])
     assert setup_bermuda_entry.options[CONF_TRACK_CATEGORIES] == ["ibeacon"]

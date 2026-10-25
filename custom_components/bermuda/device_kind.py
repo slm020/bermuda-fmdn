@@ -38,6 +38,7 @@ COMPANY_AMAZON: Final = 0x0171
 
 RSSI_RIGHT_BY: Final = -55  # dBm: stronger than this and the device is right next to a proxy
 RSSI_CLOSE: Final = -75  # dBm: weaker than this and it is not meaningfully near any proxy
+MAX_LABEL_DISTANCE: Final = 10.0  # metres: beyond this a device is "far from everywhere"
 
 # Apple "Continuity" message type (first byte of Apple manufacturer data) -> what is advertising.
 _APPLE_TYPES: Final[dict[int, str]] = {
@@ -177,6 +178,37 @@ def signal_phrase(rssi: float | None, room: str | None) -> str:
     return "far from everywhere"
 
 
+def distance_text(metres: float) -> str:
+    """A distance a person can use: 70 cm, 3.2 m, 8 m."""
+    if metres < 0.95:
+        return f"{max(10, round(metres * 100, -1)):.0f} cm"
+    return f"{metres:.1f} m" if metres < 10 else f"{metres:.0f} m"
+
+
+def nearest_estimate(device: BermudaDevice) -> tuple[float, str | None] | None:
+    """
+    Estimated distance (metres) to the nearest proxy, with that proxy's room.
+
+    Uses Bermuda's own smoothed, calibrated distances, so it is only as good as the calibration
+    (see the Calibrate screen). A distance is a better clue than "near" or "far": 70 cm is
+    probably your phone; 3 m from the living room might be a neighbour a floor up.
+    """
+    estimates = [(a.rssi_distance, a.area_name) for a in device.adverts.values() if a.rssi_distance is not None]
+    return min(estimates, key=lambda e: e[0]) if estimates else None
+
+
+def where_text(device: BermudaDevice) -> str:
+    """Where a device is, in words: "~70 cm from Study", or "far from everywhere"."""
+    estimate = nearest_estimate(device)
+    if estimate is not None:
+        metres, room = estimate
+        if metres > MAX_LABEL_DISTANCE:
+            return "far from everywhere"
+        return f"~{distance_text(metres)} from {room}" if room else f"~{distance_text(metres)} from a proxy"
+    room_info = device_room(device)
+    return signal_phrase(strongest_rssi(device), room_info[1] if room_info else None)
+
+
 def identity_hint(device: BermudaDevice) -> str | None:
     """
     Raw clues for a device that could not be identified: its company id, or a service id.
@@ -198,9 +230,9 @@ def identity_hint(device: BermudaDevice) -> str | None:
 
 def device_label(device: BermudaDevice) -> str:
     """
-    Short picker label: what it is, its name if it has one, where it is loudest, end of address.
+    Short picker label: what it is, its name if it has one, how far away, end of address.
 
-    Example: ``Windows PC / Microsoft device · "DESKTOP-1" · near Study · …EE:FF``.
+    Example: ``Windows PC / Microsoft device · "DESKTOP-1" · ~70 cm from Study · …EE:FF``.
     """
     parts = [device_kind(device)]
     if hint := identity_hint(device):
@@ -208,8 +240,7 @@ def device_label(device: BermudaDevice) -> str:
     real_name = device.name_bt_local_name or device.name_bt_serviceinfo or device.name_devreg
     if real_name:
         parts.append(f'"{real_name}"')
-    room = device_room(device)
-    parts.append(signal_phrase(strongest_rssi(device), room[1] if room else None))
+    parts.append(where_text(device))
     parts.append(f"…{device.address.upper()[-8:]}")
     return " · ".join(parts)
 
@@ -256,7 +287,11 @@ def device_facts(device: BermudaDevice, *, now: float | None = None) -> list[tup
         rows.append(
             (
                 "Heard by",
-                "; ".join(f"{a.name} ({a.area_name or 'no room'}) {a.rssi:.0f} dBm" for a in heard[:5]),
+                "; ".join(
+                    f"{a.name} ({a.area_name or 'no room'}) {a.rssi:.0f} dBm"
+                    + (f", ~{distance_text(a.rssi_distance)}" if a.rssi_distance is not None else "")
+                    for a in heard[:5]
+                ),
             )
         )
     if device.last_seen:

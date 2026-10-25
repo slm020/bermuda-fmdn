@@ -104,7 +104,7 @@ async def test_options_init_shows_menu_with_all_steps(hass: HomeAssistant, setup
     assert result["step_id"] == "init"
     menu = set(result["menu_options"])
     # Per-scanner calibration moved to subentries, so it is no longer a menu item.
-    assert menu == {"add", "hide", "identify", "tracked", "hidden", "google", "settings"}
+    assert menu == {"add", "hide", "identify", "calibrate", "google", "manage", "settings"}
     # The init step builds status text from coordinator counts.
     placeholders = result.get("description_placeholders") or {}
     assert "status" in placeholders

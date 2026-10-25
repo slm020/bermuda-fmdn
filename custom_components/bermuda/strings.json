@@ -151,7 +151,10 @@
       "no_devices": "No bluetooth devices are actively being reported from your scanners. \nYou will need to solve this before Bermuda can be of much help.",
       "no_scanners": "You need to configure some bluetooth scanners before Bermuda will have anything to work with. \nAny one of esphome bluetooth_proxy, Shelly bluetooth proxy or local bluetooth adaptor should get you started.",
       "some_active": "You have at least some active devices, this is good.",
-      "unknown": "Could not enrol the device. Check the IRK and try again."
+      "unknown": "Could not enrol the device. Check the IRK and try again.",
+      "no_signal": "That proxy barely heard the phone. Wake the phone, move closer and try again.",
+      "unstable": "The signal was jumpy. Hold the phone still, away from walls and people, and try again.",
+      "inconsistent": "The 5 m reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
     },
     "step": {
       "globalopts": {
@@ -219,10 +222,10 @@
           "add": "Add devices",
           "hide": "Hide devices",
           "identify": "Identify a device",
-          "tracked": "Tracked devices",
-          "hidden": "Hidden devices",
-          "settings": "Settings",
-          "google": "Google tags"
+          "calibrate": "Calibrate distances",
+          "google": "Google tags",
+          "manage": "Manage",
+          "settings": "Settings"
         }
       },
       "enrol_private": {
@@ -256,8 +259,7 @@
       "settings": {
         "title": "Settings",
         "menu_options": {
-          "globalopts": "Distance, tracking & learning",
-          "categories": "Track whole categories",
+          "globalopts": "Advanced numbers",
           "area_entities": "Presence sensors",
           "enrol_private": "Enrol a phone by key (advanced)"
         }
@@ -323,7 +325,56 @@
       "google": {
         "title": "Google tags",
         "description": "Google Find Hub tags (Pixel Buds, Chipolo, Pebblebee...) change their Bluetooth address every ~15 minutes, so Bermuda needs your Google keys to recognise them. **No rooting is needed**: that note on the *Enrol a phone by key* screen is for something else.\\n\\n{status}\\n\\n**How to connect**\\n1. Install **Google Find My Device** from HACS (BSkando/GoogleFindMy-HA).\\n2. On a computer with Chrome, **on your home network**, run that integration's login helper and sign in with the Google account that owns your tags. (See *Authentication Part 1* in its README: the Docker helper or `python main.py`.) This creates a file called `secrets.json`.\\n3. [Add the integration](/config/integrations/dashboard/add?domain=googlefindmy) in Home Assistant, paste the contents of `secrets.json`, then restart Home Assistant.\\n4. Come back to this screen: your tags are listed here once Bermuda has heard them."
+      },
+      "manage": {
+        "title": "Manage",
+        "menu_options": {
+          "tracked": "Tracked devices",
+          "hidden": "Hidden devices",
+          "categories": "Track whole categories"
+        }
+      },
+      "calibrate": {
+        "title": "Calibrate distances",
+        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 5 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\\n\\nPick the phone you'll hold (keep its screen on).",
+        "data": {
+          "device": "Phone"
+        }
+      },
+      "calibrate_hub": {
+        "title": "Calibrate distances",
+        "description": "{status}\\n\\nStart with **Distance**, then do each proxy you want to even out, then **Save**.",
+        "menu_options": {
+          "calibrate_distance": "Distance (1 m and 5 m)",
+          "calibrate_proxy": "Even out a proxy (1 m)",
+          "calibrate_save": "Save and finish",
+          "calibrate_discard": "Discard"
+        }
+      },
+      "calibrate_distance": {
+        "title": "Distance",
+        "description": "Pick the proxy you can stand 1 m and 5 m from, in a straight line.",
+        "data": {
+          "proxy": "Proxy"
+        }
+      },
+      "calibrate_proxy": {
+        "title": "Even out a proxy",
+        "description": "Pick a proxy, then hold the phone 1 m from it. A tick means it is done.",
+        "data": {
+          "proxy": "Proxy"
+        }
+      },
+      "calibrate_ready": {
+        "title": "Get ready",
+        "description": "{instruction}"
       }
+    },
+    "progress": {
+      "measuring": "Measuring. Keep the phone still with its screen on."
+    },
+    "abort": {
+      "no_devices": "No Bluetooth devices are nearby to calibrate with."
     }
   },
   "services": {
