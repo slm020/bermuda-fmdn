@@ -94,7 +94,7 @@ def test_score_rssi_is_monotonic_and_bounded():
 
 def test_weak_signal_not_unknown_on_first_dip():
     """A single weak cycle is debounced: the device stays placed, not Unknown."""
-    weak = _advert("s1", "Garage", -108.0, 15.0)  # < moving floor (-105)
+    weak = _advert("s1", "Garage", -124.0, 15.0)  # < moving floor (-120)
     _device, applied = _run(weak, [weak])
     # weak_hold_seconds has not elapsed yet, so the incumbent area is held.
     assert applied[-1] == (weak, False)
@@ -102,7 +102,7 @@ def test_weak_signal_not_unknown_on_first_dip():
 
 def test_weak_signal_unknown_when_sustained():
     """A weak signal held past weak_hold_seconds reports Unknown."""
-    weak = _advert("s1", "Garage", -108.0, 15.0)  # < moving floor (-105)
+    weak = _advert("s1", "Garage", -124.0, 15.0)  # < moving floor (-120)
     state = AreaDecisionState()
     state.weak_since = NOW - 100  # already weak long enough to trip the debounce
     device, applied = _run(weak, [weak], state=state)
@@ -113,9 +113,9 @@ def test_weak_signal_unknown_when_sustained():
 
 def test_weak_signal_exit_needs_margin():
     """Once weak-Unknown, a recovery that only reaches the bare floor stays Unknown."""
-    # Already Unknown; signal recovers to exactly the floor (-105) but not past
-    # floor + weak_exit_margin (-101), so hysteresis keeps it Unknown.
-    borderline = _advert("s1", "Garage", -105.0, 15.0)
+    # Already Unknown; signal recovers to exactly the floor (-120) but not past
+    # floor + weak_exit_margin (-116), so hysteresis keeps it Unknown.
+    borderline = _advert("s1", "Garage", -120.0, 15.0)
     state = AreaDecisionState()
     state.unknown_since = NOW - 50
     state.weak_since = NOW - 50

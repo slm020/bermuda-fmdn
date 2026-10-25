@@ -120,7 +120,7 @@ class MobilityPolicy:
     dwell_seconds: float = 8.0
     majority_window: int = 9
     majority_need: int = 6
-    min_rssi_confidence: float = -105.0
+    min_rssi_confidence: float = -120.0
     ambiguity_ratio: float = 1.2
     ambiguity_hold_seconds: float = 8.0
     unknown_exit_ratio: float = 1.35
@@ -163,7 +163,7 @@ def _mobility_policy(mobility_type: str) -> MobilityPolicy:
             dwell_seconds=24.0,
             majority_window=15,
             majority_need=10,
-            min_rssi_confidence=-103.0,
+            min_rssi_confidence=-120.0,
             ambiguity_ratio=1.25,
             ambiguity_hold_seconds=14.0,
             unknown_exit_ratio=1.45,
