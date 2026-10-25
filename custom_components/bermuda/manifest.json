@@ -1,6 +1,6 @@
 {
   "domain": "bermuda",
-  "name": "Bermuda BLE Trilateration",
+  "name": "Bermuda BLE (slm020 fork)",
   "bluetooth": [
     {
       "connectable": false,
@@ -8,7 +8,7 @@
     }
   ],
   "codeowners": [
-    "@foXaCe"
+    "@slm020"
   ],
   "config_flow": true,
   "after_dependencies": [
@@ -19,14 +19,14 @@
     "device_tracker",
     "private_ble_device"
   ],
-  "documentation": "https://github.com/foXaCe/bermuda",
+  "documentation": "https://github.com/slm020/bermuda-fmdn",
   "integration_type": "device",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/foXaCe/bermuda/issues",
+  "issue_tracker": "https://github.com/slm020/bermuda-fmdn/issues",
   "loggers": [
     "custom_components.bermuda"
   ],
   "quality_scale": "gold",
   "requirements": [],
-  "version": "0.14.3-fmdn.4"
+  "version": "0.1.0"
 }
