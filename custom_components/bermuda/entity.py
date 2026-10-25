@@ -146,12 +146,18 @@ class BermudaEntity(CoordinatorEntity[BermudaDataUpdateCoordinator]):
             # already named it nicely.
             domain_name = DOMAIN_PRIVATE_BLE_DEVICE
         elif self._device.address_type == ADDR_TYPE_FMDN_DEVICE:
-            # Attach to the Google Find Hub device (same identifiers) so Bermuda's entities
-            # sit on the same device card as GoogleFindMy-HA's. Without it, fall through to our own.
+            # Our own device for the tag, linked to the Google Find Hub device as its parent.
+            # (Home Assistant no longer treats identifiers as unique across integrations, so
+            # reusing the Google device's identifiers would just create a second device with the
+            # same name rather than sharing one.)
             devreg = self.coordinator.dr.async_get(self._device.fmdn_device_id) if self._device.fmdn_device_id else None
-            if devreg is not None and devreg.identifiers:
-                return dr.DeviceInfo(identifiers=set(devreg.identifiers))
             connections = set()
+            if devreg is not None and devreg.identifiers:
+                return dr.DeviceInfo(
+                    identifiers={(domain_name, cast("str", self._device.unique_id))},
+                    name=self._device.name,
+                    via_device=min(devreg.identifiers),
+                )
         else:
             connections = {(dr.CONNECTION_BLUETOOTH, self._device.address.upper())}
             # No need to set model, since MAC address will be shown via connection.

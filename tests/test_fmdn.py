@@ -365,7 +365,7 @@ async def test_discovery_seeds_metadevices_and_grabs_names(hass, setup_bermuda_e
     assert coordinator.metadevices == {}
 
 
-async def test_entities_attach_to_the_google_device(hass, setup_bermuda_entry):
+async def test_entities_get_their_own_device_linked_to_the_google_device(hass, setup_bermuda_entry):
     from custom_components.bermuda.entity import BermudaEntity  # noqa: PLC0415
 
     coordinator = _coordinator(setup_bermuda_entry)
@@ -379,13 +379,16 @@ async def test_entities_attach_to_the_google_device(hass, setup_bermuda_entry):
     meta = coordinator.metadevices[f"{FMDN_ADDRESS_PREFIX}{devreg.id}"]
 
     entity = BermudaEntity(coordinator, setup_bermuda_entry, meta.address)
-    assert entity.device_info["identifiers"] == {(DOMAIN_GOOGLEFINDMY, "gfm1:canon")}
-    assert "name" not in entity.device_info  # must not rename the Google device
+    info = entity.device_info
+    assert info["identifiers"] == {(DOMAIN, meta.unique_id)}  # ours, never the Google device's
+    assert info["name"] == "Keys tag"
+    assert info["via_device"] == (DOMAIN_GOOGLEFINDMY, "gfm1:canon")  # shown as "connected via" the Google device
 
-    # If the Google device is gone, fall back to a device of our own.
+    # If the Google device is gone, there is simply no parent link.
     meta.fmdn_device_id = "no-such-device"
     fallback = entity.device_info
     assert fallback["identifiers"] == {(DOMAIN, meta.unique_id)}
+    assert "via_device" not in fallback
 
 
 # ---------------------------------------------------------------------------
