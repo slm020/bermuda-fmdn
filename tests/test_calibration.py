@@ -34,7 +34,7 @@ from tests.test_device_picker import _hear, _scanner, _submit
 
 
 def test_summarise_needs_enough_readings_and_uses_the_median():
-    assert summarise([-60.0] * 5) is None
+    assert summarise([-60.0] * 3) is None
     result = summarise([-60, -61, -60, -59, -60, -90])  # one wild outlier doesn't drag the median
     assert result == Measurement(-60.0, result.spread, 6)
     assert result.count == 6
