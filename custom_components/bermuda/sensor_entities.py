@@ -8,7 +8,6 @@ from homeassistant.components.sensor import RestoreSensor, SensorEntity
 from homeassistant.components.sensor.const import SensorDeviceClass, SensorStateClass
 from homeassistant.const import (
     SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
-    STATE_NOT_HOME,
     STATE_UNAVAILABLE,
     EntityCategory,
     UnitOfElectricPotential,
@@ -20,6 +19,7 @@ from .const import (
     ADDR_TYPE_IBEACON,
     ADDR_TYPE_PRIVATE_BLE_DEVICE,
     ICON_MICROLOCATION,
+    STATE_NOT_HOME_LABEL,
 )
 from .entity import BermudaEntity
 
@@ -53,7 +53,7 @@ class BermudaSensor(BermudaEntity, SensorEntity):
         """
         # Return not_home when device is not detected, for consistency with device_tracker
         if self._device.area_name is None:
-            return STATE_NOT_HOME
+            return STATE_NOT_HOME_LABEL
         if self._device.area_is_unknown:
             # Evidence too weak/ambiguous to place the device. Expose Home
             # Assistant's native "unknown" state (localised automatically, e.g.
@@ -129,13 +129,13 @@ class BermudaSensorFloor(BermudaSensor):
 
     @property
     def native_value(self) -> str:
-        """Name of the floor the device was located on, or not_home."""
+        """Name of the floor the device was located on, or "Not Home"."""
         # Don't use area_scanner.name because it comes from the advert
         # entry. Instead refer to the BermudaDevice, which takes trouble
         # to use user-given names etc.
         # Return not_home when device is not detected, for consistency with device_tracker
         if self._device.floor_name is None:
-            return STATE_NOT_HOME
+            return STATE_NOT_HOME_LABEL
         return self._device.floor_name
 
 
@@ -151,7 +151,7 @@ class BermudaSensorScanner(BermudaSensor):
 
     @property
     def native_value(self) -> str:
-        """Name of the nearest scanner currently seeing this device, or not_home."""
+        """Name of the nearest scanner currently seeing this device, or "Not Home"."""
         # Don't use area_scanner.name because it comes from the advert
         # entry. Instead refer to the BermudaDevice, which takes trouble
         # to use user-given names etc.
@@ -160,7 +160,7 @@ class BermudaSensorScanner(BermudaSensor):
             scanner_device = self.coordinator.devices.get(self._device.area_advert.scanner_address)
             if scanner_device is not None:
                 return scanner_device.name
-        return STATE_NOT_HOME
+        return STATE_NOT_HOME_LABEL
 
     @property
     def extra_state_attributes(self) -> Mapping[str, Any] | None:

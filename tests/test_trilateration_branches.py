@@ -129,8 +129,19 @@ def test_unknown_when_sustained_ambiguous():
     b = _advert("s2", "Roadside", -71.0, 3.1)  # score ratio ~1.13 < ambiguity_ratio (1.2)
     state = AreaDecisionState()
     state.ambiguous_since = NOW - 100  # already held long enough
-    _device, applied = _run(a, [a, b], state=state)
+    _device, applied = _run(None, [a, b], state=state)
     assert applied[-1][1] is True
+
+
+def test_ambiguous_pair_keeps_the_room_we_are_already_in():
+    """A near-tie that includes the current room keeps it instead of flashing Unknown."""
+    a = _advert("s1", "Bedroom", -70.0, 3.0)
+    b = _advert("s2", "Landing", -71.0, 3.1)  # score ratio ~1.13 < ambiguity_ratio (1.2)
+    state = AreaDecisionState()
+    state.ambiguous_since = NOW - 100
+    _device, applied = _run(a, [a, b], state=state)
+    assert applied[-1][1] is False
+    assert applied[-1][0] is not None
 
 
 def test_not_unknown_when_clearly_separated():

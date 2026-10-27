@@ -240,15 +240,25 @@ def _unknown_reason(
     state: AreaDecisionState,
     nowstamp: float,
     max_radius: float,
+    incumbent_scanner: str | None = None,
 ) -> str | None:
-    """Decide whether the (non-None) best contender is too weak/ambiguous → 'Unknown'."""
+    """
+    Decide whether the (non-None) best contender is too weak/ambiguous → 'Unknown'.
+
+    A near-tie only counts as ambiguous when the room we are already in is not one of
+    the tied pair. If it is, the hysteresis keeps it, which beats flashing Unknown for a
+    second whenever a sleeping phone's two nearest proxies hear it about equally.
+    """
     if _weak_signal_unknown(best, policy, state, nowstamp):
         return f"weak_rssi({best.rssi_filtered:.1f}dBm)"
 
     reason: str | None = None
     if second is not None:
         ratio = best.score / max(second.score, _EPSILON)
-        if ratio < policy.ambiguity_ratio:
+        holds_incumbent = incumbent_scanner in (best.advert.scanner_address, second.advert.scanner_address)
+        if holds_incumbent:
+            state.ambiguous_since = 0.0
+        elif ratio < policy.ambiguity_ratio:
             if state.ambiguous_since <= 0:
                 state.ambiguous_since = nowstamp
             elif nowstamp - state.ambiguous_since >= policy.ambiguity_hold_seconds:
@@ -257,6 +267,7 @@ def _unknown_reason(
             state.ambiguous_since = 0.0
         if (
             reason is None
+            and not holds_incumbent
             and best.advert.rssi_distance is not None
             and best.advert.rssi_distance > max_radius * 0.92
             and ratio < (policy.ambiguity_ratio + 0.1)
@@ -370,7 +381,8 @@ def refresh_area_by_min_distance(device: BermudaDevice, options: dict[str, Any])
         device.apply_scanner_selection(None)
         return
 
-    unknown_reason = _unknown_reason(best, second, policy, state, nowstamp, max_radius)
+    incumbent_scanner = device.area_advert.scanner_address if device.area_advert is not None else None
+    unknown_reason = _unknown_reason(best, second, policy, state, nowstamp, max_radius, incumbent_scanner)
     if unknown_reason is not None:
         if state.unknown_since <= 0:
             state.unknown_since = nowstamp

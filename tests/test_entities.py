@@ -15,13 +15,14 @@ from unittest.mock import MagicMock
 
 from bluetooth_data_tools import monotonic_time_coarse
 from homeassistant.components.device_tracker.const import SourceType
-from homeassistant.const import STATE_NOT_HOME, STATE_UNAVAILABLE
+from homeassistant.const import STATE_UNAVAILABLE
 
 from custom_components.bermuda.const import (
     ADDR_TYPE_IBEACON,
     ADDR_TYPE_PRIVATE_BLE_DEVICE,
     BDADDR_TYPE_RANDOM_STATIC,
     NEARBY_MAX_DEVICES,
+    STATE_NOT_HOME_LABEL,
 )
 from custom_components.bermuda.device_tracker import BermudaDeviceTracker
 from custom_components.bermuda.entity import BermudaEntity, BermudaGlobalEntity
@@ -65,7 +66,7 @@ def test_area_sensor_native_value_not_home_when_no_area():
     """When area_name is None, native_value falls back to STATE_NOT_HOME."""
     ent = _make_entity(BermudaSensor)
     ent._device = SimpleNamespace(area_name=None, area_is_unknown=False)
-    assert ent.native_value == STATE_NOT_HOME
+    assert ent.native_value == STATE_NOT_HOME_LABEL
 
 
 def test_area_sensor_native_value_none_when_unknown():
@@ -171,7 +172,7 @@ def test_floor_sensor_native_value():
 
     ent_none = _make_entity(BermudaSensorFloor)
     ent_none._device = SimpleNamespace(floor_name=None)
-    assert ent_none.native_value == STATE_NOT_HOME
+    assert ent_none.native_value == STATE_NOT_HOME_LABEL
 
 
 def test_floor_sensor_icon():
@@ -220,7 +221,7 @@ def test_scanner_sensor_native_value_not_home_when_no_advert():
     """No area_advert => STATE_NOT_HOME."""
     ent = _make_entity(BermudaSensorScanner)
     ent._device = SimpleNamespace(area_advert=None)
-    assert ent.native_value == STATE_NOT_HOME
+    assert ent.native_value == STATE_NOT_HOME_LABEL
 
 
 def test_scanner_sensor_native_value_not_home_when_scanner_unknown():
@@ -229,7 +230,7 @@ def test_scanner_sensor_native_value_not_home_when_scanner_unknown():
     ent.coordinator = MagicMock()
     ent.coordinator.devices = {}
     ent._device = SimpleNamespace(area_advert=SimpleNamespace(scanner_address="missing"))
-    assert ent.native_value == STATE_NOT_HOME
+    assert ent.native_value == STATE_NOT_HOME_LABEL
 
 
 def test_scanner_sensor_exposes_nearest_scanner_entity_id():

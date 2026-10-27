@@ -345,6 +345,8 @@ DEFAULT_MOBILITY_TYPE: Final = MOBILITY_MOVING
 # Explicit area outcome when coverage/evidence is weak or ambiguous (vs not_home,
 # which means the device timed out / isn't seen at all).
 AREA_NAME_UNKNOWN: Final = "Unknown"
+# State of the area/floor/scanner sensors when the device is not seen at all (the device_tracker keeps HA's own not_home).
+STATE_NOT_HOME_LABEL: Final = "Not Home"
 
 # Misc
 DIAG_TEXT_MAX_LENGTH: Final = 255  # cap for diagnostic text and string attributes
