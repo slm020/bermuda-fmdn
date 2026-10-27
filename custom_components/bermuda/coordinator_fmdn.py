@@ -21,6 +21,7 @@ from homeassistant.const import Platform
 
 from .const import (
     _LOGGER,
+    CONF_BLOCKED_DEVICES,
     DOMAIN_GOOGLEFINDMY,
     FMDN_ADDRESS_PREFIX,
     FMDN_RETRY_INTERVAL,
@@ -85,6 +86,8 @@ class BermudaFmdnMixin:
         self._fmdn_pending.pop(source_device.address, None)
         source_device.metadevice_type.add(METADEVICE_TYPE_FMDN_SOURCE)
         for tag in tags:
+            if self._fmdn_is_hidden(tag.device_id):
+                continue
             metadevice = self._fmdn_get_metadevice(tag)
             if source_device.address not in metadevice.metadevice_sources:
                 metadevice.metadevice_sources.insert(0, source_device.address)
@@ -107,6 +110,11 @@ class BermudaFmdnMixin:
                 del self._fmdn_pending[address]
                 continue
             self.fmdn_handle_advertisement(source, latest)
+
+    def _fmdn_is_hidden(self, device_id: str) -> bool:
+        """Whether the user hid this Google device, so it must not be re-created at restart."""
+        address = f"{FMDN_ADDRESS_PREFIX}{device_id}".upper()
+        return address in {a.upper() for a in self.options.get(CONF_BLOCKED_DEVICES, []) if isinstance(a, str)}
 
     # --- metadevices --------------------------------------------------------
 
@@ -146,6 +154,8 @@ class BermudaFmdnMixin:
                     (ident.split(":")[-1] for domain, ident in devreg.identifiers if domain == DOMAIN_GOOGLEFINDMY),
                     "",
                 )
+                if self._fmdn_is_hidden(entity.device_id):
+                    continue
                 self._fmdn_get_metadevice(FmdnTag(entity.device_id, canonical, entry.entry_id))
 
     def fmdn_redirect(self, device: BermudaDevice) -> BermudaDevice:

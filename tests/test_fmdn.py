@@ -364,6 +364,12 @@ async def test_discovery_seeds_metadevices_and_grabs_names(hass, setup_bermuda_e
     coordinator.discover_fmdn_metadevices()
     assert coordinator.metadevices == {}
 
+    # a Google device the user hid is not brought back on the next restart
+    coordinator.options["blocked_devices"] = [f"{FMDN_ADDRESS_PREFIX}{devreg.id}".upper()]
+    coordinator._do_fmdn_init = True  # noqa: SLF001
+    coordinator.discover_fmdn_metadevices()
+    assert coordinator.metadevices == {}
+
 
 async def test_entities_get_their_own_device_linked_to_the_google_device(hass, setup_bermuda_entry):
     from custom_components.bermuda.entity import BermudaEntity  # noqa: PLC0415
