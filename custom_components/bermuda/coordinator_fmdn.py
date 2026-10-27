@@ -17,12 +17,10 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from bluetooth_data_tools import monotonic_time_coarse
-from homeassistant.const import Platform
 
 from .const import (
     _LOGGER,
     CONF_BLOCKED_DEVICES,
-    DOMAIN_GOOGLEFINDMY,
     FMDN_ADDRESS_PREFIX,
     FMDN_RETRY_INTERVAL,
     METADEVICE_FMDN_DEVICE,
@@ -45,9 +43,6 @@ if TYPE_CHECKING:
 class BermudaFmdnMixin:
     """Resolve rotating Google Find Hub adverts to stable metadevices."""
 
-    # Class-level defaults so a coordinator that skipped __init__ (as some tests build) stays inert.
-    _do_fmdn_init: bool = False
-
     if TYPE_CHECKING:
         # Provided by BermudaDataUpdateCoordinator (see coordinator.py:__init__).
         hass: HomeAssistant
@@ -64,7 +59,6 @@ class BermudaFmdnMixin:
         self.fmdn_stats: Counter[str] = Counter()
         # Sources whose advert did not resolve yet -> monotonic stamp of the last attempt.
         self._fmdn_pending: dict[str, float] = {}
-        self._do_fmdn_init = True
 
     # --- per-advert resolution ----------------------------------------------
 
@@ -132,31 +126,6 @@ class BermudaFmdnMixin:
             metadevice.name_devreg = devreg.name
             metadevice.make_name()
         return metadevice
-
-    def discover_fmdn_metadevices(self) -> None:
-        """
-        Seed a metadevice for every device GoogleFindMy-HA knows, before any advert arrives.
-
-        Means entities exist (and restore) at startup instead of waiting for a
-        tag to be heard. Only runs when flagged (startup, registry changes).
-        """
-        if not self._do_fmdn_init:
-            return
-        self._do_fmdn_init = False
-        for entry in self.hass.config_entries.async_entries(DOMAIN_GOOGLEFINDMY, include_disabled=False):
-            for entity in self.er.entities.get_entries_for_config_entry_id(entry.entry_id):
-                if entity.domain != Platform.DEVICE_TRACKER or entity.device_id is None:
-                    continue
-                devreg = self.dr.async_get(entity.device_id)
-                if devreg is None:
-                    continue
-                canonical = next(
-                    (ident.split(":")[-1] for domain, ident in devreg.identifiers if domain == DOMAIN_GOOGLEFINDMY),
-                    "",
-                )
-                if self._fmdn_is_hidden(entity.device_id):
-                    continue
-                self._fmdn_get_metadevice(FmdnTag(entity.device_id, canonical, entry.entry_id))
 
     def fmdn_redirect(self, device: BermudaDevice) -> BermudaDevice:
         """

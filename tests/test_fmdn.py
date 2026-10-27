@@ -335,40 +335,34 @@ async def test_device_process_service_data_only_offers_fmdn(hass, setup_bermuda_
 # ---------------------------------------------------------------------------
 
 
-async def test_discovery_seeds_metadevices_and_grabs_names(hass, setup_bermuda_entry):
+async def test_google_devices_nobody_has_heard_are_not_created(hass, setup_bermuda_entry):
+    """A phone in the Google account never broadcasts a tag signal, so it must not appear in Bermuda."""
+    coordinator = _coordinator(setup_bermuda_entry)
+    gfm_entry = MockConfigEntry(domain=DOMAIN_GOOGLEFINDMY, entry_id="gfm1")
+    gfm_entry.add_to_hass(hass)
+    devreg = dr.async_get(hass).async_get_or_create(
+        config_entry_id="gfm1", identifiers={(DOMAIN_GOOGLEFINDMY, "gfm1:canon-xyz")}, name="Phone"
+    )
+    from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
+
+    er.async_get(hass).async_get_or_create(
+        "device_tracker", DOMAIN_GOOGLEFINDMY, "phone", config_entry=gfm_entry, device_id=devreg.id
+    )
+    coordinator.update_metadevices()
+    assert f"{FMDN_ADDRESS_PREFIX}{devreg.id}" not in coordinator.metadevices
+
+
+async def test_heard_tag_takes_its_name_from_google(hass, setup_bermuda_entry):
     coordinator = _coordinator(setup_bermuda_entry)
     gfm_entry = MockConfigEntry(domain=DOMAIN_GOOGLEFINDMY, entry_id="gfm1")
     gfm_entry.add_to_hass(hass)
     devreg = dr.async_get(hass).async_get_or_create(
         config_entry_id="gfm1", identifiers={(DOMAIN_GOOGLEFINDMY, "gfm1:canon-xyz")}, name="Keys tag"
     )
-    from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
-
-    er.async_get(hass).async_get_or_create(
-        "device_tracker", DOMAIN_GOOGLEFINDMY, "keys", config_entry=gfm_entry, device_id=devreg.id
-    )
-    # a tracker with no device and a device with no registry entry are skipped quietly
-    er.async_get(hass).async_get_or_create("device_tracker", DOMAIN_GOOGLEFINDMY, "orphan", config_entry=gfm_entry)
-    er.async_get(hass).async_get_or_create("sensor", DOMAIN_GOOGLEFINDMY, "battery", config_entry=gfm_entry)
-
-    coordinator._do_fmdn_init = True  # noqa: SLF001
-    coordinator.discover_fmdn_metadevices()
-
-    meta = coordinator.metadevices[f"{FMDN_ADDRESS_PREFIX}{devreg.id}"]
+    meta = coordinator._fmdn_get_metadevice(FmdnTag(devreg.id, "canon-xyz", "gfm1"))  # noqa: SLF001
     assert meta.name == "Keys tag"
     assert meta.fmdn_canonical_id == "canon-xyz"
     assert meta.create_sensor is True
-    # one-shot until flagged again
-    assert coordinator._do_fmdn_init is False  # noqa: SLF001
-    coordinator.metadevices.clear()
-    coordinator.discover_fmdn_metadevices()
-    assert coordinator.metadevices == {}
-
-    # a Google device the user hid is not brought back on the next restart
-    coordinator.options["blocked_devices"] = [f"{FMDN_ADDRESS_PREFIX}{devreg.id}".upper()]
-    coordinator._do_fmdn_init = True  # noqa: SLF001
-    coordinator.discover_fmdn_metadevices()
-    assert coordinator.metadevices == {}
 
 
 async def test_entities_get_their_own_device_linked_to_the_google_device(hass, setup_bermuda_entry):

@@ -69,7 +69,6 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DEVICE_ACTIVE_AGE,
     DOMAIN,
-    DOMAIN_GOOGLEFINDMY,
     PRUNE_TIME_REDACTIONS,
     RSSI_BLUEZ_BOGUS,
     SAVEOUT_COOLDOWN,
@@ -366,9 +365,6 @@ class BermudaDataUpdateCoordinator(
             # Pull up the device registry entry for the device_id
             if device_entry := self.dr.async_get(ev.data["device_id"]):
                 # Work out if it's a device that interests us and respond appropriately.
-                if any(domain == DOMAIN_GOOGLEFINDMY for domain, _ident in device_entry.identifiers):
-                    _LOGGER.debug("Trigger updating of Google Find Hub devices")
-                    self._do_fmdn_init = True
                 for conn_type, _conn_id in device_entry.connections:
                     if conn_type == "private_ble_device":
                         _LOGGER.debug("Trigger updating of Private BLE Devices")
@@ -408,7 +404,6 @@ class BermudaDataUpdateCoordinator(
                 # rescan PBLE devices. But right now we don't, so scan 'em anyway.
                 _LOGGER.debug("Opportunistic trigger of update for Private BLE Devices")
                 self._do_private_device_init = True
-                self._do_fmdn_init = True
         # The co-ordinator will only get updates if we have created entities already.
         # Since this might not always be the case (say, private_ble_device loads after
         # we do), then we trigger an update here with the expectation that we got a
