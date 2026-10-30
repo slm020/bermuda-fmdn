@@ -79,8 +79,8 @@ class TrainRoomRepairFlow(RepairsFlow):
         device = coordinator.devices.get(self._device_key) if coordinator else None
         if coordinator is None or device is None:
             return self.async_abort(reason="device_gone")
-        if user_input is not None:
-            coordinator.start_training(device, user_input["area"])
+        if user_input is not None and (area := user_input.get("area")):
+            coordinator.start_training(device, area)
             return self.async_create_entry(title="", data={})
         return self.async_show_form(
             step_id="init",
