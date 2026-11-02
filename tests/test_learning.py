@@ -19,7 +19,6 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import slugify
-from homeassistant.components import persistent_notification
 
 from tests.flow_helpers import goto_setting
 from custom_components.bermuda.button import BermudaLearnRoomButton, BermudaResetLearningButton
@@ -409,36 +408,89 @@ def _train(coordinator, keys, s1, s2, area, rssi1, rssi2, clock, base_stamp=1.0)
         coordinator._refresh_learning()  # noqa: SLF001
 
 
-async def test_training_shows_a_live_progress_notification(hass, setup_bermuda_entry, clock):
-    # conftest patches persistent_notification.async_create/async_dismiss with mocks.
+async def test_learn_a_room_screen_counts_down_then_reports(hass, setup_bermuda_entry, clock, monkeypatch):
+    from custom_components.bermuda import options_learning
+
+    monkeypatch.setattr(options_learning, "CHUNK_SECONDS", 0.05)
     coordinator, keys, s1, s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
-    notice_id = coordinator._training_notice_id(keys.address)  # noqa: SLF001
-    create, dismiss = persistent_notification.async_create, persistent_notification.async_dismiss
+    flows = hass.config_entries.options
+    result = await flows.async_init(setup_bermuda_entry.entry_id)
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "calibrate"})
+    assert "learn" in result["menu_options"]
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "learn"})
+    assert result["step_id"] == "learn"
 
-    def last_message() -> str:
-        assert create.call_args.kwargs["notification_id"] == notice_id
-        return create.call_args.args[1]
+    result = await flows.async_configure(
+        result["flow_id"], user_input={"device": keys.address.upper(), "room": kitchen.id}
+    )
+    assert result["type"] is FlowResultType.SHOW_PROGRESS
+    assert result["progress_action"] == "learning"
+    shown = result["description_placeholders"]
+    assert shown["room"] == "Kitchen"
+    assert shown["device"] == "Keys"  # the friendly name, never the long id
+    assert shown["samples"] == "0"
+    assert shown["wanted"] == str(LEARN_SAMPLES)
+    assert shown["left"] == "5:00"
+    assert coordinator.training_status(keys.address)["training"]
 
-    coordinator.start_training(keys, kitchen.id)
-    assert f"0 of {LEARN_SAMPLES}" in last_message()
+    # Let the readings come in (the real thing does this in the background), then follow the flow on.
+    for i in range(LEARN_SAMPLES + 2):
+        clock.now += LEARN_INTERVAL
+        _hear(keys, s1, s2, -50 + (i % 2), -75, stamp=1.0 + i)
+        coordinator._refresh_learning()  # noqa: SLF001
+    steps = []
+    while result["type"] in (FlowResultType.SHOW_PROGRESS, FlowResultType.SHOW_PROGRESS_DONE):
+        steps.append(result.get("step_id") or result.get("next_step_id"))
+        await hass.async_block_till_done()
+        result = await flows.async_configure(result["flow_id"])
+    assert result["step_id"] == "learn_done"
+    assert "Done." in result["description_placeholders"]["outcome"]
+    assert "Keys" in result["description_placeholders"]["outcome"]
+    assert coordinator.room_profiles.get(keys.address)
 
-    _hear(keys, s1, s2, -50, -75, stamp=1.0)
-    clock.now += LEARN_INTERVAL
-    coordinator._refresh_learning()  # noqa: SLF001
-    assert f"1 of {LEARN_SAMPLES}" in last_message()
+    result = await flows.async_configure(result["flow_id"], user_input={})
+    assert result["type"] is FlowResultType.MENU  # back at the main menu
 
-    coordinator.reset_learning(keys)  # a reset dismisses the progress notice
-    dismiss.assert_called_with(hass, notice_id)
 
-    _train(coordinator, keys, s1, s2, kitchen, -50, -75, clock)
-    assert "Done" in last_message()  # finishing replaces it with the outcome
+async def test_learn_a_room_screen_reports_a_run_that_heard_too_little(hass, setup_bermuda_entry, clock, monkeypatch):
+    from custom_components.bermuda import options_learning
 
-    # Too few readings by the deadline: the notice says nothing was saved.
-    coordinator.reset_learning(keys)
-    coordinator.start_training(keys, kitchen.id)
+    monkeypatch.setattr(options_learning, "CHUNK_SECONDS", 0.05)
+    coordinator, keys, _s1, _s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
+    flows = hass.config_entries.options
+    result = await flows.async_init(setup_bermuda_entry.entry_id)
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "calibrate"})
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "learn"})
+    result = await flows.async_configure(
+        result["flow_id"], user_input={"device": keys.address.upper(), "room": kitchen.id}
+    )
     clock.now += LEARN_MAX_SECONDS + 1
     coordinator._refresh_learning()  # noqa: SLF001
-    assert "nothing was saved" in last_message()
+    while result["type"] in (FlowResultType.SHOW_PROGRESS, FlowResultType.SHOW_PROGRESS_DONE):
+        await hass.async_block_till_done()
+        result = await flows.async_configure(result["flow_id"])
+    assert result["step_id"] == "learn_done"
+    assert "nothing was saved" in result["description_placeholders"]["outcome"]
+
+
+async def test_learn_a_room_screen_shows_an_error_when_training_cannot_start(
+    hass, setup_bermuda_entry, clock, monkeypatch
+):
+    coordinator, keys, _s1, _s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
+
+    def refuse(*_a, **_k):
+        raise ServiceValidationError("nope")
+
+    monkeypatch.setattr(coordinator, "start_training", refuse)
+    flows = hass.config_entries.options
+    result = await flows.async_init(setup_bermuda_entry.entry_id)
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "calibrate"})
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "learn"})
+    result = await flows.async_configure(
+        result["flow_id"], user_input={"device": keys.address.upper(), "room": kitchen.id}
+    )
+    assert result["step_id"] == "learn"
+    assert result["errors"] == {"base": "learn_cannot_start"}
 
 
 async def test_training_collects_fresh_samples_and_saves_the_room(hass, setup_bermuda_entry, clock):
@@ -520,19 +572,12 @@ async def _trained_keys(hass, entry, clock):
     return coordinator, keys, s1, s2, kitchen, hall
 
 
-async def test_trained_room_steps_in_only_when_confidence_is_poor(hass, setup_bermuda_entry, clock):
+async def test_trained_room_overrides_a_confident_but_wrong_distance_answer(hass, setup_bermuda_entry, clock):
     coordinator, keys, s1, s2, kitchen, hall = await _trained_keys(hass, setup_bermuda_entry, clock)
-    # Live readings look like the Hall, but plain distance (wrongly) says Kitchen.
+    # Live readings look like the Hall, but plain distance (wrongly) says Kitchen, steadily.
     _hear(keys, s1, s2, -75, -50, d1=1.0, d2=1.1, stamp=900.0)
-
-    # Distance is steady, so confidence is full: a trained room never overrides a confident answer.
     _dwell(coordinator, keys, clock, kitchen.id, 400)
-    assert keys.area_id == kitchen.id
-
-    # Now the distance answer starts flapping: confidence drops and the trained Hall wins.
-    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=200)
-    _dwell(coordinator, keys, clock, kitchen.id, 1)
-    assert keys.area_id == hall.id
+    assert keys.area_id == hall.id  # training wins even though distance never doubted itself
     assert keys.area_advert is None  # an override, not a winning advert
 
 

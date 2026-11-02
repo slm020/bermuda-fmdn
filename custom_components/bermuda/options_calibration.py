@@ -132,7 +132,11 @@ class CalibrationFlowMixin(OptionsFlow):
     # --- steps --------------------------------------------------------------
 
     async def async_step_calibrate(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Calibrate, step 1: pick the phone to hold."""
+        """Calibrate: what to calibrate (distances, or what a room looks like)."""
+        return self.async_show_menu(step_id="calibrate", menu_options=["calibrate_phone", "learn"])
+
+    async def async_step_calibrate_phone(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Calibrate distances, step 1: pick the phone to hold."""
         if user_input is not None:
             self._cal = {"device": user_input["device"].lower(), "raw_1m": {}, "ref_power": None}
             return await self.async_step_calibrate_hub()
@@ -141,7 +145,7 @@ class CalibrationFlowMixin(OptionsFlow):
             return self.async_abort(reason="no_devices")
         options = [SelectOptionDict(value=d.address.upper(), label=device_label(d)) for d in devices]
         return self.async_show_form(
-            step_id="calibrate",
+            step_id="calibrate_phone",
             data_schema=vol.Schema({vol.Required("device"): self._list_selector(options, multiple=False)}),
         )
 

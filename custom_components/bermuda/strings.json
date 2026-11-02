@@ -154,7 +154,8 @@
       "unknown": "Could not enrol the device. Check the IRK and try again.",
       "no_signal": "That proxy heard the phone only {heard} in 60 seconds (it needs at least 3). Keep the phone awake with its screen on, move closer and try again.",
       "unstable": "The signal was jumpy. Hold the phone still, away from walls and people, and try again.",
-      "inconsistent": "The far reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again."
+      "inconsistent": "The far reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again.",
+      "learn_cannot_start": "Couldn't start: pick a phone that is currently visible and a room."
     },
     "step": {
       "globalopts": {
@@ -335,10 +336,11 @@
         }
       },
       "calibrate": {
-        "title": "Calibrate distances",
-        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 3 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\n\nPick the phone you'll hold (keep its screen on).",
-        "data": {
-          "device": "Phone"
+        "title": "Calibrate",
+        "description": "What would you like to calibrate?",
+        "menu_options": {
+          "calibrate_phone": "Distances (hold a phone at 1 m and 3 m)",
+          "learn": "Learn a room (teach it what a room looks like)"
         }
       },
       "calibrate_hub": {
@@ -372,13 +374,34 @@
           "distance": "Far distance (step 2 only)",
           "skip": "Skip step 2 and keep my current fade rate"
         }
+      },
+      "learn": {
+        "title": "Learn a room",
+        "description": "Teach Bermuda what a room looks like to a phone. Pick the phone and the room it is in, then keep the phone there (screen on, roughly where you'd sit) while it listens for about 5 minutes. Use it where the room is often mistaken for its neighbour.",
+        "data": {
+          "device": "Phone",
+          "room": "Room it is in"
+        }
+      },
+      "learn_done": {
+        "title": "Learn a room",
+        "description": "{outcome}"
+      },
+      "calibrate_phone": {
+        "title": "Calibrate distances",
+        "description": "Distances are only as good as the calibration. This guides you through it: you hold a phone at 1 m and 3 m from one proxy, then at 1 m from each other proxy. Nothing is saved until the end.\n\nPick the phone you'll hold (keep its screen on).",
+        "data": {
+          "device": "Phone"
+        }
       }
     },
     "progress": {
-      "measuring": "Measuring, up to {left} seconds left (it stops sooner once it has enough readings). Keep the phone still with its screen on.\n\n{heard}"
+      "measuring": "Measuring, up to {left} seconds left (it stops sooner once it has enough readings). Keep the phone still with its screen on.\n\n{heard}",
+      "learning": "Learning **{room}** with **{device}**. {samples} of {wanted} readings, about {left} left. Keep the phone where it is."
     },
     "abort": {
-      "no_devices": "No Bluetooth devices are nearby to calibrate with."
+      "no_devices": "No Bluetooth devices are nearby to calibrate with.",
+      "no_tracked_devices": "No tracked devices to teach. Add one first."
     }
   },
   "services": {

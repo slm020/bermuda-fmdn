@@ -7,7 +7,7 @@ alone. When a device's confidence stays poor for a while, a Repairs prompt asks
 the user whether to train it; training captures per-scanner RSSI while the
 device sits in a room the user names. From then on, whenever that device's
 confidence is poor, its live readings are compared with the trained rooms and a
-clear match overrides the distance-picked room.
+clear match overrides the distance-picked room, even when distance alone looks confident.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING, cast
 
 import voluptuous as vol
 from bluetooth_data_tools import monotonic_time_coarse
-from homeassistant.components import persistent_notification
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -63,7 +62,6 @@ class _TrainingRun:
     profile: RoomProfile
     last_sample: float
     last_stamp: float = 0.0
-    shown: int = -1  # sample count last shown in the progress notification
 
 
 class BermudaLearningMixin:
@@ -98,6 +96,7 @@ class BermudaLearningMixin:
         self._low_since: dict[str, float] = {}
         self._train_prompts: set[str] = set()  # device keys with an open "train it?" prompt
         self._training: dict[str, _TrainingRun] = {}
+        self.last_training: dict[str, dict[str, Any]] = {}  # device address -> how its last run ended
         self.training_room: dict[str, str] = {}  # device address -> area id picked on the select entity
         entry.async_create_background_task(
             hass, self.room_profiles.async_load(), "Load Bermuda room profiles", eager_start=True
@@ -138,11 +137,12 @@ class BermudaLearningMixin:
             result = tracker.result(now)
 
             if profiles := self.room_profiles.get(key):
-                # Trained devices don't need prompting; trained rooms only step in when
-                # plain distance is doubtful, so a well-recognised device is never overridden.
+                # Trained devices don't need prompting. A trained room is checked every cycle: it only
+                # overrides the distance-picked room when the live readings are a decent fit for it and
+                # clearly better than any other trained room (see match_rooms), so doubt is not required.
+                # (Being "confident" is no use if the confidently-chosen room is the wrong one.)
                 self._withdraw_train_prompt(key)
-                if result.score < threshold:
-                    self._apply_trained_room(device, live, profiles)
+                self._apply_trained_room(device, live, profiles)
             else:
                 self._monitor_confidence(device, result, threshold, now)
 
@@ -254,49 +254,12 @@ class BermudaLearningMixin:
             msg = f"{device.name} isn't a tracked device, so it can't be trained."
             raise ServiceValidationError(msg)
         now = monotonic_time_coarse()
+        self.last_training.pop(device.address, None)
         self._training[device.address] = _TrainingRun(
             area_id, now, RoomProfile(area_id), last_sample=now - LEARN_INTERVAL
         )
         self._withdraw_train_prompt(device.address, force=True)
-        self._training_notice(device, self._training[device.address])
         return self.training_status(device.address)
-
-    def _training_notice_id(self, address: str) -> str:
-        return f"bermuda_training_{slugify(address)}"
-
-    def _training_notice(self, device: BermudaDevice, run: _TrainingRun, *, now: float | None = None) -> None:
-        """Show (or refresh) the live progress notification for a training run."""
-        if now is None:
-            now = monotonic_time_coarse()
-        samples = run.profile.samples
-        run.shown = samples
-        left = max(0, min((LEARN_SAMPLES - samples) * LEARN_INTERVAL, int(LEARN_MAX_SECONDS - (now - run.started))))
-        room = self.resolve_area_name(run.area_id) or run.area_id
-        persistent_notification.async_create(
-            self.hass,
-            f"Keep **{device.name}** in the **{room}** and stay roughly where you are.\n\n"
-            f"Readings: **{samples} of {LEARN_SAMPLES}** — about **{left // 60}:{left % 60:02d}** left.",
-            title=f"Learning {room}",
-            notification_id=self._training_notice_id(device.address),
-        )
-
-    def _training_notice_done(self, device: BermudaDevice, run: _TrainingRun, *, kept: bool) -> None:
-        """Replace the progress notification with the outcome."""
-        room = self.resolve_area_name(run.area_id) or run.area_id
-        samples = run.profile.samples
-        if kept:
-            message = f"Done. {device.name} is trained for **{room}** from {samples} readings."
-        else:
-            message = (
-                f"Only {samples} readings were heard, so nothing was saved. "
-                f"Keep {device.name} awake and in the {room} and try again."
-            )
-        persistent_notification.async_create(
-            self.hass,
-            message,
-            title=f"Learning {room}: {'done' if kept else 'not saved'}",
-            notification_id=self._training_notice_id(device.address),
-        )
 
     def training_status(self, address: str) -> dict[str, Any]:
         """Describe a device's training state, for service responses and diagnostics."""
@@ -307,6 +270,7 @@ class BermudaLearningMixin:
             "area_id": run.area_id if run else None,
             "samples": run.profile.samples if run else 0,
             "samples_wanted": LEARN_SAMPLES,
+            "last_result": self.last_training.get(address),
             "trained_rooms": sorted(self.room_profiles.get(address)),
         }
 
@@ -320,14 +284,17 @@ class BermudaLearningMixin:
             if freshest > run.last_stamp:  # only genuinely new adverts, never the same one twice
                 run.profile.add_sample(live)
                 run.last_sample, run.last_stamp = now, freshest
-                if run.profile.samples != run.shown:
-                    self._training_notice(device, run, now=now)
         if run.profile.samples >= LEARN_SAMPLES or now - run.started > LEARN_MAX_SECONDS:
             self._finish_training(device, run)
 
     def _finish_training(self, device: BermudaDevice, run: _TrainingRun) -> None:
         """Keep the run if it gathered enough samples, otherwise discard it."""
         del self._training[device.address]
+        self.last_training[device.address] = {
+            "area_id": run.area_id,
+            "samples": run.profile.samples,
+            "kept": run.profile.samples >= LEARN_MIN_SAMPLES,
+        }
         if run.profile.samples < LEARN_MIN_SAMPLES:
             _LOGGER.warning(
                 "Training %s for %s gathered only %d samples; discarded. Keep it in the room and try again.",
@@ -335,7 +302,6 @@ class BermudaLearningMixin:
                 self.resolve_area_name(run.area_id) or run.area_id,
                 run.profile.samples,
             )
-            self._training_notice_done(device, run, kept=False)
             return
         self.room_profiles.put(device.address, run.profile)
         self._confidence.pop(device.address, None)
@@ -346,12 +312,11 @@ class BermudaLearningMixin:
             self.resolve_area_name(run.area_id) or run.area_id,
             run.profile.samples,
         )
-        self._training_notice_done(device, run, kept=True)
 
     def reset_learning(self, device: BermudaDevice) -> bool:
         """Forget everything trained for a device (and any run in progress). Returns whether anything was trained."""
-        if self._training.pop(device.address, None) is not None:
-            persistent_notification.async_dismiss(self.hass, self._training_notice_id(device.address))
+        self._training.pop(device.address, None)
+        self.last_training.pop(device.address, None)
         self._confidence.pop(device.address, None)
         self._low_since.pop(device.address, None)
         self._withdraw_train_prompt(device.address, force=True)

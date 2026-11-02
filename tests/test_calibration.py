@@ -159,7 +159,10 @@ async def _wizard(hass, entry):
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], user_input={"next_step_id": "calibrate"}
     )
-    assert result["step_id"] == "calibrate"
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={"next_step_id": "calibrate_phone"}
+    )
+    assert result["step_id"] == "calibrate_phone"
     result = await _submit(hass, result, device="AA:BB:CC:DD:EE:60")
     assert result["step_id"] == "calibrate_hub"
     return result, lounge, kitchen
@@ -270,6 +273,9 @@ async def test_calibrate_with_no_devices_nearby_explains_itself(hass, setup_berm
     result = await hass.config_entries.options.async_init(setup_bermuda_entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], user_input={"next_step_id": "calibrate"}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={"next_step_id": "calibrate_phone"}
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "no_devices"

@@ -85,6 +85,7 @@ from .const import (
 from .device_kind import device_facts, device_kind, device_label, strongest_rssi
 from .helpers import is_blocked, is_device_selectable
 from .options_calibration import CalibrationFlowMixin
+from .options_learning import LearnFlowMixin
 from .options_text import _DESCRIPTION_TEXTS
 from .private_enrol import async_enrol_private_device
 from .util import mac_redact
@@ -96,7 +97,7 @@ if TYPE_CHECKING:
     from .coordinator import BermudaDataUpdateCoordinator
 
 
-class BermudaOptionsFlowHandler(CalibrationFlowMixin, OptionsFlow):
+class BermudaOptionsFlowHandler(CalibrationFlowMixin, LearnFlowMixin, OptionsFlow):
     """Config flow options handler for bermuda."""
 
     def __init__(self) -> None:
