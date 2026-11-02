@@ -42,6 +42,7 @@ from homeassistant.util.dt import get_age, now
 from .area_entity import BermudaAreaEntityManager, apply_area_entity_overrides
 from .bermuda_device import BermudaDevice
 from .bermuda_irk import BermudaIrkManager
+from .calibration import retitle_calibration_subentries
 from .const import (
     _LOGGER,
     _LOGGER_SPAM_LESS,
@@ -149,6 +150,7 @@ class BermudaDataUpdateCoordinator(
         self.stamp_redactions_expiry: float | None = None
 
         self.update_in_progress: bool = False  # A lock to guard against huge backlogs / slow processing
+        self._retitle_next: float = 0.0  # monotonic time of the next calibration-title check
         self.stamp_last_update: float = 0  # Last time we ran an update, from monotonic_time_coarse()
         self.stamp_last_update_started: float = 0
         self.stamp_last_prune: float = 0  # When we last pruned device list
@@ -652,8 +654,14 @@ class BermudaDataUpdateCoordinator(
             self._apply_area_entity_overrides()
             _mark("area_overrides")
 
+            # Proxies are often unknown at setup, so keep offering calibration entries that are still
+            # titled by a bare address their proxy's friendly name (once a minute; settles after one pass).
+            if (now := monotonic_time_coarse()) >= self._retitle_next:
+                self._retitle_next = now + 60
+                retitle_calibration_subentries(self.hass, self.config_entry)
+
             # Phase 4a2: score how well each tracked device's room is being recognised, prompt to
-            # train the ones that keep going wrong, and let trained rooms settle genuine doubt.
+            # train the ones that keep going wrong, and apply the rooms the user trained.
             self._refresh_learning()
             _mark("learning")
 
