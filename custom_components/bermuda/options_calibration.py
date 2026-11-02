@@ -33,6 +33,7 @@ from .calibration import (
     SAMPLE_INTERVAL,
     apply_scanner_offsets,
     attenuation_from,
+    attenuation_warning,
     is_plausible_attenuation,
     is_stable,
     offset_for,
@@ -125,6 +126,10 @@ class CalibrationFlowMixin(OptionsFlow):
                 f"**Distance:** 1 m reads {cal['ref_power']:.1f} dBm, fade rate {cal['attenuation']:.2f}"
                 " (measured, not saved yet)."
             )
+        if cal.get("ref_power") is not None and not cal.get("skipped_far") and (
+            warning := attenuation_warning(float(cal["attenuation"]))
+        ):
+            distance += f"\n\n**Check this:** {warning}"
         done = [p for p in self._cal_proxies() if p.address in cal["raw_1m"]]
         proxies = ", ".join(self._proxy_name(p) for p in done) if done else "none yet"
         return f"{distance}\n\n**Proxies measured:** {proxies}."
@@ -133,7 +138,7 @@ class CalibrationFlowMixin(OptionsFlow):
 
     async def async_step_calibrate(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Calibrate: what to calibrate (distances, or what a room looks like)."""
-        return self.async_show_menu(step_id="calibrate", menu_options=["calibrate_phone", "learn"])
+        return self.async_show_menu(step_id="calibrate", menu_options=["calibrate_phone", "learn", "places"])
 
     async def async_step_calibrate_phone(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Calibrate distances, step 1: pick the phone to hold."""

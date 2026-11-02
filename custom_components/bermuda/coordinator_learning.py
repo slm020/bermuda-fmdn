@@ -4,10 +4,11 @@ Confidence-triggered room learning, mixed into the coordinator.
 Each update cycle, for every tracked device, this scores how well its room is
 being recognised (see ``room_learning``). Devices recognised well are left
 alone. When a device's confidence stays poor for a while, a Repairs prompt asks
-the user whether to train it; training captures per-scanner RSSI while the
-device sits in a room the user names. From then on, whenever that device's
-confidence is poor, its live readings are compared with the trained rooms and a
-clear match overrides the distance-picked room, even when distance alone looks confident.
+the user whether to train a room; training captures per-scanner RSSI while a device
+sits in a room the user names. Trained rooms belong to the whole house: every tracked
+device's live readings are compared with them (ignoring how loud the device is, see
+``room_learning.match_rooms``) and a clear match overrides the distance-picked room,
+even when distance alone looks confident.
 """
 
 from __future__ import annotations
@@ -40,10 +41,17 @@ from .const import (
     REPAIR_TRAIN_PREFIX,
 )
 from .device_kind import device_kind, ha_device_name
-from .room_learning import ConfidenceResult, ConfidenceTracker, ProfileStore, RoomProfile, match_rooms
+from .room_learning import (
+    ConfidenceResult,
+    ConfidenceTracker,
+    ProfileStore,
+    RoomProfile,
+    device_live_rssi,
+    match_rooms,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from typing import Any
 
     from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
@@ -62,6 +70,8 @@ class _TrainingRun:
     profile: RoomProfile
     last_sample: float
     last_stamp: float = 0.0
+    replace: bool = False  # forget the room's other spots when this one is saved
+    label: str = ""
 
 
 class BermudaLearningMixin:
@@ -96,7 +106,7 @@ class BermudaLearningMixin:
         self._low_since: dict[str, float] = {}
         self._train_prompts: set[str] = set()  # device keys with an open "train it?" prompt
         self._training: dict[str, _TrainingRun] = {}
-        self.last_training: dict[str, dict[str, Any]] = {}  # device address -> how its last run ended
+        self.last_training: dict[str, dict[str, Any]] = {}  # training device address -> how its last run ended
         entry.async_create_background_task(
             hass, self.room_profiles.async_load(), "Load Bermuda room profiles", eager_start=True
         )
@@ -135,26 +145,18 @@ class BermudaLearningMixin:
             tracker.add(now, device.area_id, device.floor_id, self._learning_margin(device))
             result = tracker.result(now)
 
-            if profiles := self.room_profiles.get(key):
-                # Trained devices don't need prompting. A trained room is checked every cycle: it only
-                # overrides the distance-picked room when the live readings are a decent fit for it and
-                # clearly better than any other trained room (see match_rooms), so doubt is not required.
+            if rooms := self.room_profiles.rooms():
+                # Trained rooms are checked every cycle for every device: one only overrides the
+                # distance-picked room when the live readings are a decent fit for it and clearly better
+                # than any other trained room (see match_rooms), so doubt is not required.
                 # (Being "confident" is no use if the confidently-chosen room is the wrong one.)
-                self._withdraw_train_prompt(key)
-                self._apply_trained_room(device, live, profiles)
-            else:
-                self._monitor_confidence(device, result, threshold, now)
+                self._apply_trained_room(device, live, rooms)
+            self._monitor_confidence(device, result, threshold, now)
 
     @staticmethod
     def _learning_live_rssi(device: BermudaDevice) -> dict[str, float]:
-        """Strongest current RSSI from each scanner that can hear the device right now."""
-        live: dict[str, float] = {}
-        for advert in device.adverts.values():
-            if advert.rssi_distance is None or advert.rssi is None:
-                continue
-            if advert.rssi > live.get(advert.scanner_address, float("-inf")):
-                live[advert.scanner_address] = advert.rssi
-        return live
+        """Raw, median-smoothed RSSI per scanner (see ``room_learning.device_live_rssi``)."""
+        return device_live_rssi(device)
 
     @staticmethod
     def _learning_margin(device: BermudaDevice) -> float | None:
@@ -177,7 +179,12 @@ class BermudaLearningMixin:
     ) -> None:
         """Raise a "train it?" prompt once confidence has been poor long enough; withdraw it on recovery."""
         key = device.address
-        if result.score < threshold:
+        untrained = [a for a in result.top_areas if a not in self.room_profiles.rooms()]
+        if result.top_areas and not untrained:
+            # Every room it flaps between is already trained house-wide: nothing left to offer.
+            self._low_since.pop(key, None)
+            self._withdraw_train_prompt(key)
+        elif result.score < threshold:
             since = self._low_since.setdefault(key, now)
             if now - since >= self._learning_sustained() and key not in self._train_prompts:
                 self._raise_train_prompt(device, result)
@@ -188,7 +195,7 @@ class BermudaLearningMixin:
 
     def _raise_train_prompt(self, device: BermudaDevice, result: ConfidenceResult) -> None:
         """Create the Repairs issue (a dismissed issue stays dismissed, so this can't nag)."""
-        names = [self.resolve_area_name(a) or a for a in result.top_areas]
+        names = [self.resolve_area_name(a) or a for a in result.top_areas if a not in self.room_profiles.rooms()]
         ir.async_create_issue(
             self.hass,
             DOMAIN,
@@ -226,10 +233,10 @@ class BermudaLearningMixin:
 
     @staticmethod
     def _apply_trained_room(
-        device: BermudaDevice, live: Mapping[str, float], profiles: Mapping[str, RoomProfile]
+        device: BermudaDevice, live: Mapping[str, float], rooms: Mapping[str, Sequence[RoomProfile]]
     ) -> None:
         """Override the distance-picked room when live readings clearly match a different trained room."""
-        match = match_rooms(live, profiles)
+        match = match_rooms(live, rooms)
         if match.area_id is None or match.area_id == device.area_id:
             return
         in_room = [a.rssi_distance for a in device.adverts.values() if a.area_id == match.area_id and a.rssi_distance]
@@ -239,12 +246,16 @@ class BermudaLearningMixin:
 
     # --- training -----------------------------------------------------------
 
-    def start_training(self, device: BermudaDevice, area_id: str) -> dict[str, Any]:
+    def start_training(
+        self, device: BermudaDevice, area_id: str, *, replace: bool = False, label: str = ""
+    ) -> dict[str, Any]:
         """
         Begin capturing a training run: the device must stay in ``area_id`` until it completes.
 
         Samples are taken every LEARN_INTERVAL seconds from fresh adverts, up to
-        LEARN_SAMPLES or LEARN_MAX_SECONDS. Re-training a room replaces it.
+        LEARN_SAMPLES or LEARN_MAX_SECONDS. The result is a new *spot* in that room, shared by
+        every tracked device. ``label`` names the spot (training the same label again retrains that spot);
+        ``replace`` forgets the room's earlier spots first.
         """
         if self.ar.async_get_area(area_id) is None:
             msg = f"No Home Assistant area with id '{area_id}'."
@@ -255,7 +266,12 @@ class BermudaLearningMixin:
         now = monotonic_time_coarse()
         self.last_training.pop(device.address, None)
         self._training[device.address] = _TrainingRun(
-            area_id, now, RoomProfile(area_id), last_sample=now - LEARN_INTERVAL
+            area_id,
+            now,
+            RoomProfile(area_id, label.strip()),
+            last_sample=now - LEARN_INTERVAL,
+            replace=replace,
+            label=label.strip(),
         )
         self._withdraw_train_prompt(device.address, force=True)
         return self.training_status(device.address)
@@ -270,7 +286,8 @@ class BermudaLearningMixin:
             "samples": run.profile.samples if run else 0,
             "samples_wanted": LEARN_SAMPLES,
             "last_result": self.last_training.get(address),
-            "trained_rooms": sorted(self.room_profiles.get(address)),
+            "trained_rooms": sorted(self.room_profiles.rooms()),
+            "trained_spots": self.room_profiles.labels(),
         }
 
     def _learning_advance_training(self, device: BermudaDevice, live: Mapping[str, float], now: float) -> None:
@@ -293,6 +310,7 @@ class BermudaLearningMixin:
             "area_id": run.area_id,
             "samples": run.profile.samples,
             "kept": run.profile.samples >= LEARN_MIN_SAMPLES,
+            "label": run.label,
         }
         if run.profile.samples < LEARN_MIN_SAMPLES:
             _LOGGER.warning(
@@ -302,30 +320,41 @@ class BermudaLearningMixin:
                 run.profile.samples,
             )
             return
-        self.room_profiles.put(device.address, run.profile)
-        self._confidence.pop(device.address, None)
-        self._low_since.pop(device.address, None)
+        dropped = self.room_profiles.add_spot(run.profile, replace=run.replace)
+        self.last_training[device.address]["label"] = run.profile.label
+        if dropped:
+            self.last_training[device.address]["dropped"] = dropped
+            _LOGGER.warning(
+                "%s already had the maximum number of spots, so the oldest (%s) was dropped",
+                self.resolve_area_name(run.area_id) or run.area_id,
+                dropped,
+            )
+        self._confidence.clear()
+        self._low_since.clear()
         _LOGGER.info(
-            "Trained %s for %s from %d samples",
-            device.name,
+            "Trained a spot in %s using %s from %d samples",
             self.resolve_area_name(run.area_id) or run.area_id,
+            device.name,
             run.profile.samples,
         )
 
-    def reset_learning(self, device: BermudaDevice) -> bool:
-        """Forget everything trained for a device (and any run in progress). Returns whether anything was trained."""
-        self._training.pop(device.address, None)
-        self.last_training.pop(device.address, None)
-        self._confidence.pop(device.address, None)
-        self._low_since.pop(device.address, None)
-        self._withdraw_train_prompt(device.address, force=True)
-        return self.room_profiles.reset(device.address)
+    def reset_learning(self, area_id: str | None = None, label: str | None = None) -> bool:
+        """Forget one spot (``area_id`` + ``label``), one room, or every room. Returns whether anything was trained."""
+        if area_id is None:
+            self._training.clear()
+            self.last_training.clear()
+        self._confidence.clear()
+        self._low_since.clear()
+        for key in list(self._train_prompts):
+            self._withdraw_train_prompt(key, force=True)
+        return self.room_profiles.forget(area_id, label)
 
     def learning_diagnostics(self) -> dict[str, Any]:
         """Learning state for the diagnostics download."""
         return {
             "enabled": self.learning_enabled,
-            "trained_devices": len(self.room_profiles.device_keys()),
+            "trained_rooms": len(self.room_profiles.rooms()),
+            "trained_spots": sum(len(spots) for spots in self.room_profiles.rooms().values()),
             "open_prompts": len(self._train_prompts),
             "training": len(self._training),
         }
@@ -339,9 +368,20 @@ class BermudaLearningMixin:
             (
                 "learn_room",
                 self.service_learn_room,
-                vol.Schema({vol.Required("device"): text, vol.Required("area"): text}),
+                vol.Schema(
+                    {
+                        vol.Required("device"): text,
+                        vol.Required("area"): text,
+                        vol.Optional("label"): text,
+                        vol.Optional("replace"): cv.boolean,
+                    }
+                ),
             ),
-            ("reset_learning", self.service_reset_learning, vol.Schema({vol.Required("device"): text})),
+            (
+                "reset_learning",
+                self.service_reset_learning,
+                vol.Schema({vol.Optional("area"): text, vol.Optional("label"): text}),
+            ),
         ]
         for name, handler, schema in services:
             hass.services.async_register(DOMAIN, name, handler, schema, SupportsResponse.OPTIONAL)
@@ -353,15 +393,28 @@ class BermudaLearningMixin:
         entry.async_on_unload(_unregister)
 
     async def service_learn_room(self, call: ServiceCall) -> ServiceResponse:
-        """Start training a device in the named room (it must stay there for a few minutes)."""
+        """Start training a spot in the named room using this device (it must stay there for a few minutes)."""
         device = self._require_device(call.data["device"])
         area_id = self._resolve_area_id(call.data["area"])
         if area_id is None:  # pragma: no cover - area is a required, non-empty field
             msg = "Please say which room the device is in."
             raise ServiceValidationError(msg)
-        return cast("ServiceResponse", self.start_training(device, area_id))
+        return cast(
+            "ServiceResponse",
+            self.start_training(
+                device, area_id, replace=bool(call.data.get("replace")), label=str(call.data.get("label", ""))
+            ),
+        )
 
     async def service_reset_learning(self, call: ServiceCall) -> ServiceResponse:
-        """Forget everything trained for a device."""
-        device = self._require_device(call.data["device"])
-        return cast("ServiceResponse", {"device": device.name, "reset": self.reset_learning(device)})
+        """Forget one spot (``area`` + ``label``), one trained room (``area``), or every trained room."""
+        area_id = self._resolve_area_id(call.data["area"]) if call.data.get("area") else None
+        if call.data.get("area") and area_id is None:
+            msg = f"No Home Assistant area matches '{call.data['area']}'."
+            raise ServiceValidationError(msg)
+        label = str(call.data.get("label", "")).strip() or None
+        if label and area_id is None:
+            msg = "Say which area the spot is in as well as its label."
+            raise ServiceValidationError(msg)
+        reset = self.reset_learning(area_id, label)
+        return cast("ServiceResponse", {"area_id": area_id, "label": label, "reset": reset})

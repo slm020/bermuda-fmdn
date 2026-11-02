@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 import voluptuous as vol
 from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.selector import AreaSelector
 
 from .const import DOMAIN, REPAIR_SCANNER_WITHOUT_AREA, REPAIR_TRAIN_PREFIX
@@ -59,15 +60,14 @@ class ScannerWithoutAreaRepairFlow(RepairsFlow):
 
 
 class TrainRoomRepairFlow(RepairsFlow):
-    """Handler for the "train it?" issue: ask which room the device is in and start training."""
+    """Handler for the "train a room?" issue: teach a room now, or skip it for good."""
 
     def __init__(self, hass: HomeAssistant, device_key: str) -> None:
-        """Store hass (to reach the coordinator) and the address of the device to train."""
+        """Store hass (to reach the coordinator) and the address of the device that raised the prompt."""
         self._hass = hass
         self._device_key = device_key
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Ask for the room, then start a training run on the device."""
+    def _coordinator_and_device(self) -> tuple[Any, Any]:
         coordinator = next(
             (
                 cast("BermudaConfigEntry", entry).runtime_data.coordinator
@@ -77,20 +77,41 @@ class TrainRoomRepairFlow(RepairsFlow):
             None,
         )
         device = coordinator.devices.get(self._device_key) if coordinator else None
+        return coordinator, device
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Offer to teach a room now, or to skip this prompt."""
+        coordinator, device = self._coordinator_and_device()
         if coordinator is None or device is None:
             return self.async_abort(reason="device_gone")
-        if user_input is not None and (area := user_input.get("area")):
-            coordinator.start_training(device, area)
-            return self.async_create_entry(title="", data={})
-        return self.async_show_form(
+        return self.async_show_menu(
             step_id="init",
-            data_schema=vol.Schema({vol.Required("area"): AreaSelector()}),
+            menu_options=["train", "skip"],
             description_placeholders={
                 "device": ha_device_name(self._hass, device),
                 "kind": device_kind(device),
                 "areas": "several rooms",
             },
         )
+
+    async def async_step_train(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Ask for the room, then start a training run using the device."""
+        coordinator, device = self._coordinator_and_device()
+        if coordinator is None or device is None:
+            return self.async_abort(reason="device_gone")
+        if user_input is not None and (area := user_input.get("area")):
+            coordinator.start_training(device, area)
+            return self.async_create_entry(title="", data={})
+        return self.async_show_form(
+            step_id="train",
+            data_schema=vol.Schema({vol.Required("area"): AreaSelector()}),
+            description_placeholders={"device": ha_device_name(self._hass, device), "kind": device_kind(device)},
+        )
+
+    async def async_step_skip(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Skip: dismiss the prompt, and it stays dismissed (Bermuda will not raise it again for this device)."""
+        ir.async_ignore_issue(self._hass, DOMAIN, self.issue_id, True)
+        return self.async_create_entry(title="", data={})
 
 
 async def async_create_fix_flow(

@@ -25,6 +25,7 @@ from custom_components.bermuda.const import (
     DOMAIN,
     ICON_MICROLOCATION,
     MICROLOC_HYSTERESIS_CYCLES,
+    MICROLOC_LEAVE_CYCLES,
 )
 from custom_components.bermuda.sensor import BermudaSensor, BermudaSensorMicroLocation
 
@@ -74,6 +75,7 @@ def _set_distance(device: BermudaDevice, scanner: BermudaDevice, distance: float
         advert = device.get_scanner(scanner.address)
     advert.rssi_distance = distance
     advert.rssi = rssi
+    advert.hist_rssi = [rssi] * 5  # places are matched on raw signal strength
     advert.hist_distance_by_interval = [distance] * 5
     advert.area_id = scanner.area_id
     advert.area_name = scanner.area_name
@@ -93,8 +95,8 @@ async def _setup_keys_in_kitchen(hass, entry):
     keys = _make_tracked_device(coordinator, "ec:00:00:00:00:01", "Keys")
     keys.area_id = "kitchen"
     keys.area_name = "Kitchen"
-    _set_distance(keys, s1, 1.0)
-    _set_distance(keys, s2, 5.0)
+    _set_distance(keys, s1, 1.0, -50)
+    _set_distance(keys, s2, 5.0, -75)
     return coordinator, keys, s1, s2
 
 
@@ -118,20 +120,39 @@ async def test_calibrate_then_match_and_hysteresis(hass, setup_bermuda_entry):
     assert "warning" not in hook  # 2 proxies is enough
 
     # Calibrate a second, distinct spot.
-    _set_distance(keys, s1, 5.0)
-    _set_distance(keys, s2, 1.0)
+    _set_distance(keys, s1, 5.0, -75)
+    _set_distance(keys, s2, 1.0, -50)
     coordinator.calibrate_location(keys, "Drawer")
     assert len(coordinator.fingerprints.list(keys.address)) == 2
 
     # Put it back near the hook; the match must persist before it commits.
-    _set_distance(keys, s1, 1.1)
-    _set_distance(keys, s2, 4.9)
+    _set_distance(keys, s1, 1.1, -51)
+    _set_distance(keys, s2, 4.9, -74)
     for _ in range(MICROLOC_HYSTERESIS_CYCLES - 1):
         coordinator._refresh_microlocations()  # noqa: SLF001
         assert keys.micro_location_name is None  # not yet persistent enough
     coordinator._refresh_microlocations()  # noqa: SLF001
     assert keys.micro_location_name == "Key hook"
     assert keys.micro_location_confidence is not None
+
+
+async def test_calibrate_records_signal_strength_and_spread(hass, setup_bermuda_entry):
+    coordinator, keys, s1, s2 = await _setup_keys_in_kitchen(hass, setup_bermuda_entry)
+    keys.get_scanner(s1.address).hist_rssi = [-48, -52, -50, -50, -50, -50]
+    spot = coordinator.calibrate_location(keys, "Hook")
+    fingerprint = coordinator.fingerprints.find_by_name("Hook")
+    assert fingerprint.rssi_vector[s1.address] == pytest.approx(-50.0)
+    assert fingerprint.rssi_std[s1.address] == pytest.approx(1.1547, abs=0.01)
+    assert spot["samples"] == 6
+    assert "readings_warning" not in spot
+
+
+async def test_calibrate_with_very_few_readings_warns(hass, setup_bermuda_entry):
+    coordinator, keys, s1, s2 = await _setup_keys_in_kitchen(hass, setup_bermuda_entry)
+    for scanner in (s1, s2):
+        keys.get_scanner(scanner.address).hist_rssi = [-60]
+    spot = coordinator.calibrate_location(keys, "Hook")
+    assert "readings_warning" in spot
 
 
 async def test_calibrate_single_scanner_warns(hass, setup_bermuda_entry):
@@ -199,13 +220,21 @@ async def test_service_list_remove_rename(hass, setup_bermuda_entry):
         return_response=True,
     )
     assert renamed["renamed"] is True
-    assert coordinator.fingerprints.find_by_name(keys.address, "Coat hook") is not None
+    assert coordinator.fingerprints.find_by_name("Coat hook") is not None
 
     removed = await hass.services.async_call(
-        DOMAIN, "remove_location", {"device": "Keys", "name": "Coat hook"}, blocking=True, return_response=True
-    )
+        DOMAIN, "remove_location", {"name": "Coat hook"}, blocking=True, return_response=True
+    )  # no device needed: places belong to the house
     assert removed["removed"] is True
     assert coordinator.fingerprints.list(keys.address) == []
+
+    import pytest
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError, match="no saved place called"):
+        await hass.services.async_call(DOMAIN, "remove_location", {"name": "Coat hook"}, blocking=True)
+    with pytest.raises(ServiceValidationError, match="no saved place called"):
+        await hass.services.async_call(DOMAIN, "rename_location", {"name": "Nope", "new_name": "x"}, blocking=True)
 
 
 async def test_service_unknown_device_raises(hass, setup_bermuda_entry):
@@ -418,10 +447,12 @@ async def test_device_leaves_spot_is_cleared(hass, setup_bermuda_entry):
     assert keys.micro_location_name == "Key hook"
 
     # Move it far from the calibrated spot; after hysteresis it should clear.
-    _set_distance(keys, s1, 40.0)
-    _set_distance(keys, s2, 40.0)
-    for _ in range(MICROLOC_HYSTERESIS_CYCLES):
+    _set_distance(keys, s1, 40.0, -92)
+    _set_distance(keys, s2, 40.0, -55)
+    for _ in range(MICROLOC_LEAVE_CYCLES - 1):
         coordinator._refresh_microlocations()  # noqa: SLF001
+    assert keys.micro_location_name == "Key hook"  # leaving takes much longer than arriving
+    coordinator._refresh_microlocations()  # noqa: SLF001
     assert keys.micro_location_name is None
 
 
@@ -481,6 +512,17 @@ async def test_micro_location_sensor(hass, setup_bermuda_entry):
     attrs = sensor.extra_state_attributes
     assert attrs["micro_location_id"] == "abc123"
     assert attrs["confidence"] == 0.82
+    assert attrs["at_marked_place"] is True
+
+
+async def test_micro_location_sensor_falls_back_to_the_room(hass, setup_bermuda_entry):
+    coordinator, keys, _s1, _s2 = await _setup_keys_in_kitchen(hass, setup_bermuda_entry)
+    keys.micro_location_name = None
+    sensor = BermudaSensorMicroLocation(coordinator, setup_bermuda_entry, keys.address)
+    assert sensor.native_value == "Kitchen"  # not at any marked place: the room
+    assert sensor.extra_state_attributes["at_marked_place"] is False
+    keys.area_name = None
+    assert sensor.native_value is None  # no place and no room
 
 
 async def test_area_sensor_exposes_microlocation(hass, setup_bermuda_entry):
@@ -741,3 +783,48 @@ async def test_service_get_config_lists_tracked_devices(hass, setup_bermuda_entr
     cfg = await hass.services.async_call(DOMAIN, "get_config", {}, blocking=True, return_response=True)
 
     assert cfg["tracked_devices"] == [{"name": "Widget4", "address": "EC:00:00:00:00:06"}]
+
+
+async def test_places_belong_to_the_house_every_tracked_device_is_matched(hass, setup_bermuda_entry):
+    """A place marked with one device is found by another, quieter one (the loudness is removed)."""
+    coordinator, keys, s1, s2 = await _setup_keys_in_kitchen(hass, setup_bermuda_entry)
+    coordinator.calibrate_location(keys, "Hook")  # marked with 'Keys' (-50 / -75)
+
+    tag = _make_tracked_device(coordinator, "ec:00:00:00:00:02", "Quiet tag")
+    _set_distance(tag, s1, 3.0, -64)  # the same pattern, but 14 dB quieter
+    _set_distance(tag, s2, 8.0, -89)
+    for _ in range(MICROLOC_HYSTERESIS_CYCLES):
+        coordinator._refresh_microlocations()  # noqa: SLF001
+    assert tag.micro_location_name == "Hook"
+    assert keys.micro_location_name == "Hook"
+
+    # Re-marking the same name from the other device updates the one place rather than adding a second.
+    coordinator.calibrate_location(tag, "hook")
+    assert len(coordinator.fingerprints.list()) == 1
+
+    # Forgetting it clears it from every device that was at it, and renaming updates them all.
+    coordinator.forget_location(coordinator.fingerprints.find_by_name("Hook").id)
+    assert tag.micro_location_name is None
+    assert keys.micro_location_name is None
+
+
+async def test_a_device_on_the_edge_of_a_place_does_not_flicker(hass, setup_bermuda_entry):
+    """Scores that wobble around the accept line must not make the sensor flip on and off."""
+    coordinator, keys, s1, s2 = await _setup_keys_in_kitchen(hass, setup_bermuda_entry)
+    coordinator.calibrate_location(keys, "Hook")
+    for _ in range(MICROLOC_HYSTERESIS_CYCLES):
+        coordinator._refresh_microlocations()  # noqa: SLF001
+    assert keys.micro_location_name == "Hook"
+
+    changes = 0
+    previous = keys.micro_location_name
+    for i in range(60):  # alternately a good fit and a poor-but-not-terrible one
+        wobble = 0 if i % 2 == 0 else 7  # 7 dB off on one proxy: scores between accept and hold
+        _set_distance(keys, s1, 1.0, -50 + wobble)
+        _set_distance(keys, s2, 5.0, -75)
+        coordinator._refresh_microlocations()  # noqa: SLF001
+        if keys.micro_location_name != previous:
+            changes += 1
+            previous = keys.micro_location_name
+    assert changes == 0
+    assert keys.micro_location_name == "Hook"

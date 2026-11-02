@@ -46,9 +46,11 @@ enrol_private_device:
 calibrate_location:
   name: Calibrate micro-location
   description: >-
-    Record a tracked device's current spot as a named micro-location (eg "Key
-    hook"), by snapshotting the RF fingerprint from every proxy that can hear
-    it. Re-running with the same device and name re-calibrates that spot.
+    Record a spot as a named place (eg "Key hook") using a tracked device that is
+    there now, by snapshotting the signal strength from every proxy that can hear
+    it. Every tracked device is then matched against the place, so any device (a
+    phone is fine) can be used to mark it. Re-running with the same name
+    re-calibrates the place.
   fields:
     device:
       required: true
@@ -88,10 +90,10 @@ list_locations:
 
 remove_location:
   name: Remove micro-location
-  description: Delete a device's saved micro-location by name.
+  description: Delete a saved place by name. Places belong to the house, so the device is not needed.
   fields:
     device:
-      required: true
+      required: false
       example: "Keys"
       selector:
         text:
@@ -103,10 +105,10 @@ remove_location:
 
 rename_location:
   name: Rename micro-location
-  description: Rename a device's saved micro-location.
+  description: Rename a saved place.
   fields:
     device:
-      required: true
+      required: false
       example: "Keys"
       selector:
         text:
@@ -190,13 +192,15 @@ get_config:
 learn_room:
   name: Learn room
   description: >-
-    Teach Bermuda what a tracked device looks like in a room. Leave the device in
-    that room for about five minutes while it collects samples. Afterwards the
-    live readings are checked against the trained rooms and a clear match wins.
+    Teach Bermuda what a room looks like. Leave the device in that room for about
+    five minutes while it collects samples. What is learned belongs to the whole
+    house: every tracked device is then matched against the trained rooms,
+    whatever its transmit power, and a clear match wins. Run it again from
+    another spot in the room to add a spot.
   fields:
     device:
       required: true
-      example: "Keys"
+      example: "Steve's S23"
       selector:
         text:
     area:
@@ -204,13 +208,28 @@ learn_room:
       example: "Kitchen"
       selector:
         text:
+    label:
+      required: false
+      example: "sofa"
+      selector:
+        text:
+    replace:
+      required: false
+      default: false
+      selector:
+        boolean:
 
 reset_learning:
   name: Reset room learning
-  description: Forget every room trained for a device.
+  description: Forget one spot (area + spot name), one trained room (area), or every trained room (neither).
   fields:
-    device:
-      required: true
-      example: "Keys"
+    area:
+      required: false
+      example: "Kitchen"
+      selector:
+        text:
+    label:
+      required: false
+      example: "sofa"
       selector:
         text:

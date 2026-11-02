@@ -40,11 +40,15 @@ from .const import (
     DOMAIN_PRIVATE_BLE_DEVICE,
     MICROLOC_CALIBRATION_SAMPLES,
     MICROLOC_HYSTERESIS_CYCLES,
+    MICROLOC_LEAVE_CYCLES,
+    MICROLOC_MIN_READINGS,
     MICROLOC_MIN_USEFUL_SCANNERS,
+    MICROLOC_RSSI_SAMPLES,
     OPT_RSSI_OFFSET_MAX,
     OPT_RSSI_OFFSET_MIN,
 )
 from .location_fingerprints import Fingerprint, FingerprintMatcher, FingerprintStore
+from .room_learning import device_live_rssi
 from .util import mac_norm
 
 if TYPE_CHECKING:
@@ -133,16 +137,17 @@ class BermudaMicrolocationMixin:
         if not self.fingerprints.loaded:
             # Store still loading from disk; try again next cycle.
             return
+        candidates = self.fingerprints.list()  # places belong to the house: every device is matched against all
         for device in self.devices.values():
             if not device.create_sensor:
                 # Only bother for devices we actually track / expose.
                 continue
-            candidates = self.fingerprints.list(device.address)
             if not candidates:
                 self._apply_microloc_result(device, None)
                 continue
-            live = self.build_live_fingerprint(device)
-            result = self.fingerprint_matcher.match(live, candidates)
+            result = self.fingerprint_matcher.match_rssi(
+                device_live_rssi(device), candidates, holding=device.micro_location_id
+            )
             self._apply_microloc_result(device, result)
 
     def _apply_microloc_result(self, device: BermudaDevice, result: MatchResult | None) -> None:
@@ -159,8 +164,16 @@ class BermudaMicrolocationMixin:
         streak = streak + 1 if winner_id == prev_id else 1
         device.micro_location_streak = (winner_id, streak)
 
-        if streak < MICROLOC_HYSTERESIS_CYCLES:
-            # Not yet persistent enough to commit to a change.
+        if winner_id is not None and winner_id == device.micro_location_id:
+            # Still at the place it was reported at: keep its confidence fresh.
+            assert result is not None  # noqa: S101
+            device.micro_location_confidence = result.confidence
+            return
+
+        # Getting into a place takes a few cycles; leaving it takes many more, because a device sitting
+        # on the edge of a place wobbles in and out and should not make the sensor flicker.
+        leaving = winner_id is None and device.micro_location_id is not None
+        if streak < (MICROLOC_LEAVE_CYCLES if leaving else MICROLOC_HYSTERESIS_CYCLES):
             return
 
         if winner_id is None:
@@ -198,13 +211,13 @@ class BermudaMicrolocationMixin:
             (
                 "remove_location",
                 self.service_remove_location,
-                vol.Schema({vol.Required("device"): text, vol.Required("name"): text}),
+                vol.Schema({vol.Optional("device"): text, vol.Required("name"): text}),
                 opt,
             ),
             (
                 "rename_location",
                 self.service_rename_location,
-                vol.Schema({vol.Required("device"): text, vol.Required("name"): text, vol.Required("new_name"): text}),
+                vol.Schema({vol.Optional("device"): text, vol.Required("name"): text, vol.Required("new_name"): text}),
                 opt,
             ),
             ("track_device", self.service_track_device, vol.Schema({vol.Required("device"): text}), opt),
@@ -309,7 +322,9 @@ class BermudaMicrolocationMixin:
         vector: dict[str, float] = {}
         vector_std: dict[str, float] = {}
         rssi_vector: dict[str, float] = {}
+        rssi_std: dict[str, float] = {}
         samples_used = 0
+        rssi_samples = 0
         for advert in device.adverts.values():
             history = [d for d in advert.hist_distance_by_interval[:MICROLOC_CALIBRATION_SAMPLES] if d is not None]
             if not history and advert.rssi_distance is not None:
@@ -322,9 +337,18 @@ class BermudaMicrolocationMixin:
             if scanner not in vector or mean < vector[scanner]:
                 vector[scanner] = mean
                 vector_std[scanner] = variance**0.5
-                if advert.rssi is not None:
-                    rssi_vector[scanner] = float(advert.rssi)
             samples_used = max(samples_used, len(history))
+
+            # What places are matched on: the raw signal strength at this spot, with its spread.
+            readings = [float(r) for r in advert.hist_rssi[:MICROLOC_RSSI_SAMPLES] if r is not None]
+            if not readings and advert.rssi is not None:
+                readings = [float(advert.rssi)]
+            if readings:
+                r_mean = sum(readings) / len(readings)
+                if scanner not in rssi_vector or r_mean > rssi_vector[scanner]:
+                    rssi_vector[scanner] = r_mean
+                    rssi_std[scanner] = (sum((r - r_mean) ** 2 for r in readings) / len(readings)) ** 0.5
+                rssi_samples = max(rssi_samples, len(readings))
 
         if not vector:
             msg = (
@@ -340,16 +364,17 @@ class BermudaMicrolocationMixin:
         if area_id is not None and (area := self.ar.async_get_area(area_id)) is not None:
             floor_id = area.floor_id
 
-        existing = self.fingerprints.find_by_name(device.address, name)
+        existing = self.fingerprints.find_by_name(name)  # same name anywhere in the house: update that place
         fingerprint = Fingerprint(
             name=name,
             device_address=device.address,
             vector=vector,
             vector_std=vector_std,
             rssi_vector=rssi_vector,
+            rssi_std=rssi_std,
             area_id=area_id,
             floor_id=floor_id,
-            sample_count=samples_used,
+            sample_count=rssi_samples or samples_used,
         )
         if existing is not None:
             # Preserve identity/age when recalibrating.
@@ -359,6 +384,20 @@ class BermudaMicrolocationMixin:
         # Let the new spot win cleanly on the next cycle.
         device.micro_location_streak = (None, 0)
         return self._fingerprint_summary(fingerprint, device, replaced=existing is not None)
+
+    def forget_location(self, fingerprint_id: str) -> bool:
+        """Delete a saved place and clear it from any device that was at it. Returns whether it existed."""
+        fingerprint = self.fingerprints.get(fingerprint_id)
+        if fingerprint is None:
+            return False
+        self.fingerprints.remove(fingerprint_id)
+        for device in self.devices.values():
+            if device.micro_location_id == fingerprint_id:
+                device.micro_location_id = None
+                device.micro_location_name = None
+                device.micro_location_confidence = None
+            device.micro_location_streak = (None, 0)
+        return True
 
     def _fingerprint_summary(
         self, fingerprint: Fingerprint, device: BermudaDevice | None = None, *, replaced: bool = False
@@ -380,6 +419,11 @@ class BermudaMicrolocationMixin:
             "samples": fingerprint.sample_count,
             "replaced": replaced,
         }
+        if fingerprint.sample_count < MICROLOC_MIN_READINGS:
+            summary["readings_warning"] = (
+                f"Only {fingerprint.sample_count} signal readings were available, so this place may be unreliable. "
+                "Leave the device awake and still for longer, then mark it again."
+            )
         if len(fingerprint.vector) < MICROLOC_MIN_USEFUL_SCANNERS:
             summary["warning"] = (
                 f"Only {len(fingerprint.vector)} proxy heard this device. Micro-locations work best with "
@@ -390,10 +434,10 @@ class BermudaMicrolocationMixin:
 
     def _device_location(self, device: BermudaDevice) -> dict[str, Any]:
         """Build a 'where is this device' answer: area + micro-location + scores."""
-        candidates = self.fingerprints.list(device.address)
+        candidates = self.fingerprints.list()
         result = None
         if candidates:
-            result = self.fingerprint_matcher.match(self.build_live_fingerprint(device), candidates)
+            result = self.fingerprint_matcher.match_rssi(device_live_rssi(device), candidates)
         out: dict[str, Any] = {
             "device": device.name,
             "device_address": device.address,
@@ -444,37 +488,31 @@ class BermudaMicrolocationMixin:
         return cast("ServiceResponse", {"count": len(locations), "locations": locations})
 
     async def service_remove_location(self, call: ServiceCall) -> ServiceResponse:
-        """Delete a device's saved micro-location by name."""
-        device = self._require_device(call.data["device"])
+        """Delete a saved place by name (places belong to the house, so any device's name works)."""
         name = call.data["name"]
-        fingerprint = self.fingerprints.find_by_name(device.address, name)
+        fingerprint = self.fingerprints.find_by_name(name)
         if fingerprint is None:
-            msg = f"'{device.name}' has no saved location called '{name}'."
+            msg = f"There is no saved place called '{name}'."
             raise ServiceValidationError(msg)
-        self.fingerprints.remove(fingerprint.id)
-        if device.micro_location_id == fingerprint.id:
-            device.micro_location_id = None
-            device.micro_location_name = None
-            device.micro_location_confidence = None
-        device.micro_location_streak = (None, 0)
-        return {"removed": True, "name": name, "device": device.name}
+        self.forget_location(fingerprint.id)
+        return {"removed": True, "name": name}
 
     async def service_rename_location(self, call: ServiceCall) -> ServiceResponse:
-        """Rename a device's saved micro-location."""
-        device = self._require_device(call.data["device"])
+        """Rename a saved place."""
         name = call.data["name"]
         new_name = call.data["new_name"].strip()
         if not new_name:
             msg = "Please provide a new name."
             raise ServiceValidationError(msg)
-        fingerprint = self.fingerprints.find_by_name(device.address, name)
+        fingerprint = self.fingerprints.find_by_name(name)
         if fingerprint is None:
-            msg = f"'{device.name}' has no saved location called '{name}'."
+            msg = f"There is no saved place called '{name}'."
             raise ServiceValidationError(msg)
         self.fingerprints.rename(fingerprint.id, new_name)
-        if device.micro_location_id == fingerprint.id:
-            device.micro_location_name = new_name
-        return {"renamed": True, "old_name": name, "new_name": new_name, "device": device.name}
+        for device in self.devices.values():
+            if device.micro_location_id == fingerprint.id:
+                device.micro_location_name = new_name
+        return {"renamed": True, "old_name": name, "new_name": new_name}
 
     async def service_track_device(self, call: ServiceCall) -> ServiceResponse:
         """Add a device to the tracked/configured devices list (creates sensors)."""

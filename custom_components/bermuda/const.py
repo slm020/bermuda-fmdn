@@ -196,6 +196,7 @@ LEARN_NEAR_EQUAL_MARGIN: Final = 0.25  # nearest scanners in different areas wit
 LEARN_SAMPLES: Final = 60  # samples collected by one training run
 LEARN_MIN_SAMPLES: Final = 10  # fewer than this at timeout and the run is discarded
 LEARN_MAX_SECONDS: Final = 300  # a training run gives up after this long
+LEARN_MEDIAN_COUNT: Final = 5  # recent adverts per scanner whose median is the reading used for matching/training
 LEARN_INTERVAL: Final = 5  # seconds between training samples
 LEARN_RECOVERY_BONUS: Final = 0.2  # confidence must exceed threshold by this to withdraw a prompt
 
@@ -357,13 +358,16 @@ DIAG_TEXT_MAX_LENGTH: Final = 255  # cap for diagnostic text and string attribut
 ICON_MICROLOCATION: Final = "mdi:map-marker-radius"
 # How many consecutive update cycles a new best-match must persist before we switch
 # the reported micro-location (mirrors the Area-selection hysteresis, so it doesn't flap).
-MICROLOC_HYSTERESIS_CYCLES: Final = 3
+MICROLOC_HYSTERESIS_CYCLES: Final = 5  # cycles a new place must keep winning before it is reported
+MICROLOC_LEAVE_CYCLES: Final = 15  # cycles a device must be outside its place before it is reported as gone
 # A fingerprint needs at least this many scanners to be meaningfully distinctive;
 # below this we still save it but warn the user.
 MICROLOC_MIN_USEFUL_SCANNERS: Final = 2
 # How many of the most-recent per-interval distance samples to fold into a calibration
 # snapshot (capped to whatever history is actually available).
 MICROLOC_CALIBRATION_SAMPLES: Final = 10
+MICROLOC_MIN_READINGS: Final = 4  # fewer signal readings than this and a new place is flagged as unreliable
+MICROLOC_RSSI_SAMPLES: Final = 25  # recent raw readings per proxy averaged when marking a place
 
 # Centralised log redaction: a safety net behind the targeted IRK-log truncations.
 # Any record that still emits a standalone 32-hex secret (e.g. a full IRK) is masked

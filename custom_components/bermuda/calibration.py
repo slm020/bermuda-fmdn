@@ -81,6 +81,20 @@ def is_plausible_attenuation(attenuation: float) -> bool:
     return MIN_ATTENUATION <= attenuation <= MAX_ATTENUATION
 
 
+LOW_ATTENUATION_WARNING: Final = 1.5  # in a real home the fade rate is usually 2-4; below this something is off
+
+
+def attenuation_warning(attenuation: float) -> str | None:
+    """A plain-words warning when the measured fade rate looks too low to be right, else None."""
+    if attenuation >= LOW_ATTENUATION_WARNING:
+        return None
+    return (
+        f"A fade rate of {attenuation:.2f} is lower than a home normally gives (usually 2 to 4). The 3 m reading "
+        "was barely weaker than the 1 m one, so distances would be squashed and far-away rooms would look close. "
+        "Try again with the far reading at 2 m, or move away from walls and the proxy, or skip the far step."
+    )
+
+
 def offset_for(ref_power: float, raw_rssi_at_1m: float) -> float:
     """The offset (dB) that makes a proxy's 1 m reading equal ``ref_power``, within the allowed range."""
     return round(min(max(ref_power - raw_rssi_at_1m, OPT_RSSI_OFFSET_MIN), OPT_RSSI_OFFSET_MAX), 1)

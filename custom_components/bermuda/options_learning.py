@@ -2,7 +2,9 @@
 "Learn a room" as a guided screen in the options flow, with a live countdown like Calibrate.
 
 Pick the phone and the room it is in, then keep it there while the progress screen shows the
-readings collected and the time left. The training itself is the coordinator's (the same one
+readings collected and the time left. What is learned belongs to the whole house (every tracked
+device is matched against it), so any phone can be used to teach a room, and a room can be taught
+from several spots. The training itself is the coordinator's (the same one
 ``bermuda.learn_room`` and the Repairs prompt start); this only watches it and reports the result.
 """
 
@@ -15,7 +17,14 @@ from typing import TYPE_CHECKING, Any, cast
 import voluptuous as vol
 from homeassistant.config_entries import OptionsFlow
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.selector import BooleanSelector, SelectOptionDict, SelectSelector, SelectSelectorConfig, SelectSelectorMode
+from homeassistant.helpers.selector import (
+    BooleanSelector,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+)
 
 from .calibration import CHUNK_SECONDS
 from .const import LEARN_INTERVAL, LEARN_MAX_SECONDS
@@ -72,16 +81,28 @@ class LearnFlowMixin(OptionsFlow):
         if user_input is not None:
             device = coordinator.devices.get(user_input["device"].lower())
             room = user_input.get("room")
-            forget = bool(user_input.get("forget"))
-            self._learn = {"device": user_input["device"].lower(), "area_id": room, "forget": forget}
+            forget_all = bool(user_input.get("forget_all"))
+            forget = bool(user_input.get("forget")) or forget_all
+            label = str(user_input.get("label") or "").strip()
+            self._learn = {
+                "device": user_input["device"].lower(),
+                "area_id": room,
+                "forget": forget,
+                "forget_all": forget_all,
+                "label": label,
+            }
             try:
-                if device is None or (not forget and not room):
+                if forget:
+                    if not forget_all and not room:
+                        msg = "Pick the room to forget, or tick forget everything."
+                        raise ServiceValidationError(msg)  # noqa: TRY301
+                    area = None if forget_all else room
+                    self._learn["forgot"] = coordinator.reset_learning(area, None if forget_all else (label or None))
+                    return await self.async_step_learn_done()
+                if device is None or not room:
                     msg = "Pick a visible device and a room."
                     raise ServiceValidationError(msg)  # noqa: TRY301
-                if forget:
-                    coordinator.reset_learning(device)
-                    return await self.async_step_learn_done()
-                coordinator.start_training(device, room)
+                coordinator.start_training(device, room, replace=bool(user_input.get("replace")), label=label)
             except ServiceValidationError:
                 errors["base"] = "learn_cannot_start"
             else:
@@ -105,11 +126,32 @@ class LearnFlowMixin(OptionsFlow):
                             mode=SelectSelectorMode.DROPDOWN,
                         )
                     ),
+                    vol.Optional("label"): TextSelector(),
+                    vol.Optional("replace", default=False): BooleanSelector(),
                     vol.Optional("forget", default=False): BooleanSelector(),
+                    vol.Optional("forget_all", default=False): BooleanSelector(),
                 }
             ),
+            description_placeholders={"trained": self._learn_trained_summary()},
             errors=errors or None,
         )
+
+    def _learn_trained_summary(self) -> str:
+        """What is already learned, one line per room, for the form's description."""
+        coordinator = self._learn_coordinator
+        rooms = coordinator.room_profiles.labels()
+        if not rooms:
+            return "Nothing is learned yet."
+        lines = [
+            f"- **{coordinator.resolve_area_name(area_id) or area_id}**: {', '.join(labels)}"
+            for area_id, labels in sorted(rooms.items(), key=lambda kv: coordinator.resolve_area_name(kv[0]) or kv[0])
+        ]
+        return "Already learned (room: spots)\n" + "\n".join(lines)
+
+    def _learn_spot_text(self) -> str:
+        assert self._learn is not None  # noqa: S101
+        label = self._learn.get("label") or ""
+        return f" ({label})" if label else ""
 
     def _learn_progress_text(self) -> dict[str, str]:
         assert self._learn is not None  # noqa: S101
@@ -119,7 +161,7 @@ class LearnFlowMixin(OptionsFlow):
         left = max(0, round(min((wanted - samples) * LEARN_INTERVAL, LEARN_MAX_SECONDS - elapsed)))
         return {
             "device": self._learn_device_name(),
-            "room": self._learn_room_name(),
+            "room": self._learn_room_name() + self._learn_spot_text(),
             "samples": str(samples),
             "wanted": str(wanted),
             "left": f"{left // 60}:{left % 60:02d}",
@@ -156,15 +198,30 @@ class LearnFlowMixin(OptionsFlow):
             self._learn = None
             return await self.async_step_init()
         if self._learn.get("forget"):
+            room = "" if self._learn.get("forget_all") else self._learn_room_name()
+            if not self._learn.get("forgot"):
+                outcome = "Nothing matched, so there was nothing to forget."
+            elif room and self._learn.get("label"):
+                outcome = f"Forgot the **{self._learn['label']}** spot in **{room}**."
+            elif room:
+                outcome = f"Forgot what was learned for **{room}**."
+            else:
+                outcome = "Forgot every room that was learned."
             return self.async_show_form(
-                step_id="learn_done",
-                data_schema=vol.Schema({}),
-                description_placeholders={"outcome": f"Forgot every room learned for **{self._learn_device_name()}**."},
+                step_id="learn_done", data_schema=vol.Schema({}), description_placeholders={"outcome": outcome}
             )
         result = self._learn_coordinator.last_training.get(self._learn["device"]) or {}
-        name, room, samples = self._learn_device_name(), self._learn_room_name(), result.get("samples", 0)
+        name, samples = self._learn_device_name(), result.get("samples", 0)
+        room = self._learn_room_name()
+        if result.get("label"):
+            room = f"{room} ({result['label']})"
         if result.get("kept"):
-            outcome = f"Done. **{name}** is trained for **{room}** from {samples} readings."
+            outcome = (
+                f"Done. **{room}** is trained, taught by **{name}** from {samples} readings. "
+                "Every tracked device is matched against it."
+            )
+            if result.get("dropped"):
+                outcome += f" That room was full, so its oldest spot (**{result['dropped']}**) was dropped."
         else:
             outcome = (
                 f"Only {samples} readings were heard, so nothing was saved. "

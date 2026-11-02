@@ -6,7 +6,7 @@
 
 > [!WARNING]
 > **This is an unofficial fork, and it is vibe coded.** Everything that differs from upstream was written with an
-> AI assistant (Claude) for one person's home setup. It is lightly tested, comes **as is** with no support and no
+> AI assistant for one person's home setup. It is lightly tested, comes **as is** with no support and no
 > guarantees, and may break your Home Assistant setup. Read the code and back up before using it. It is shared in
 > case it is useful to someone, or to the upstream maintainers if they want to take any of it.
 
@@ -18,8 +18,13 @@ Forked from [foXaCe/bermuda](https://github.com/foXaCe/bermuda), which is itself
 - **Google Find Hub tags** (Pixel Buds, Chipolo, Pebblebee...) that rotate their Bluetooth address every ~15 minutes
   are followed as one device, using the [GoogleFindMy-HA](https://github.com/BSkando/GoogleFindMy-HA) key resolver
   (needed for this feature; Bermuda holds no Google login itself).
-- **Prompted room learning**: when a device's room is poorly recognised, Bermuda offers to learn it (Repairs prompt),
-  with a guided **Configure → Calibrate → Learn a room** screen and `learn_room` / `reset_learning` services.
+- **House-wide room learning**: teach a room once (with any phone) and every tracked device is matched against it,
+  whether its transmitter is loud or quiet. A room can have several named spots (sofa, by the door...). A Repairs
+  prompt offers to teach rooms that get confused. Guided **Configure → Calibrate → Learn a room** screen and
+  `learn_room` / `reset_learning` services.
+- **Places**: **Configure → Calibrate → Places** marks named spots for the whole house (kitchen table, sofa...)
+  with any device, and every tracked device is matched against them; that device's micro-location sensor then says which place it is at, or just the room when it is not at
+  a marked place (the `at_marked_place` attribute tells them apart).
 - **Reworked device picker**: tick-box lists, devices labelled with what they are and roughly how far away, and
   hide-by-kind (for example all Apple devices at once).
 - **Guided auto-calibration**: no more guessing reference power, attenuation or per-proxy offsets. Hold a phone
@@ -185,19 +190,29 @@ this fork watches for those and offers help:
   forth, near-equal readings from two rooms, bouncing between floors). Devices recognised well are
   never touched.
 - Bermuda watches the last five minutes of each device. If it stays poorly recognised for about five
-  more minutes, a **Repairs** notice asks *"Train Keys?"*.
-  Pick the room it's in, leave it there for about five minutes, and Bermuda learns what its signal
-  looks like from each proxy in that room. Dismissing the notice means it won't nag again.
-- From then on Bermuda keeps checking the rooms you trained and overrides the distance answer
+  more minutes, a **Repairs** notice asks *"Train a room for Keys?"* (only for rooms it flaps between that are
+  not trained yet). Pick the room it's in, leave the device there for about five minutes, and Bermuda
+  learns what its signal looks like from each proxy at that spot. Dismissing the notice means it won't nag again.
+- What is learned belongs to the **house**, not to the device that taught it. Matching removes the device's overall
+  loudness (a louder or quieter transmitter shifts every proxy by the same number of dB) and compares only the
+  differences between proxies, so one training works for phones, watches and tags alike. A proxy that cannot hear a
+  quiet device is not held against a room. At least two proxies must hear the device for a match.
+- From then on Bermuda keeps checking the trained rooms and overrides the distance answer
   whenever the live readings clearly fit one of them (and fit it better than any other trained room).
   Train every room that gets confused with a neighbour, not just one.
-- You can also train on demand: **Configure → Calibrate → Learn a room** shows a live countdown while
-  it listens (tick *Forget* there to wipe a phone's training), and there are `bermuda.learn_room` /
-  `bermuda.reset_learning` actions.
+- Give each spot a name (sofa, door, north wall) and teach as many spots per room as you need (up to 12).
+  Teaching the same name again retrains just that spot; *Start this room over* forgets the room's other spots first.
+- You can train on demand: **Configure → Calibrate → Learn a room** shows a live countdown while it listens.
+  Tick *Forget* to remove a named spot (or the whole room if no name is given), or *Forget everything* to start
+  again. There are also `bermuda.learn_room` and `bermuda.reset_learning` actions (`area`, optional `label`).
 - The threshold, the five minutes, and the whole feature can be changed under *Global options →
   Room learning*. Turning it off stops the monitoring and the notices.
 
-Learned rooms are stored per device (for Find Hub tags, per tag), so they survive MAC rotation.
+Learned rooms are stored as raw signal readings, so recalibrating distances afterwards does not affect them.
+
+**Places** (micro-locations) are also house-wide and matched on raw signal strength with the device's loudness
+removed, so mark a place once with any device (a phone is fine) and a tag or a watch is found there too. They do not
+depend on the distance calibration.
 
 ## What you need:
 

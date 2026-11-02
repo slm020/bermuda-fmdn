@@ -121,12 +121,23 @@
       "fix_flow": {
         "step": {
           "init": {
-            "title": "Teach Bermuda where {device} is",
-            "description": "**{device}** (Home Assistant device name; Bermuda sees it as: {kind})\n\nBermuda keeps changing its mind between {areas} for this device, so the room it shows may be wrong.\n\nTo fix it: take {device} to ONE room, choose that room below, press Submit and leave it there for about 5 minutes while Bermuda listens. Only this device is affected, and Bermuda only uses what it learns when it is unsure.\n\nDon't want to? Close this and choose Ignore; it won't ask again for this device.",
+            "title": "Bermuda can't tell which room {device} is in",
+            "description": "**{device}** (Bermuda sees it as: {kind})\n\nBermuda keeps changing its mind between {areas} for this device, so the room it shows may be wrong.\n\nYou can teach Bermuda one of those rooms now, which helps every tracked device, or skip this. Skipping dismisses the notice for good.",
+            "menu_options": {
+              "train": "Teach a room now",
+              "skip": "Skip (don't ask again)"
+            }
+          },
+          "train": {
+            "title": "Teach Bermuda a room",
+            "description": "Take **{device}** to ONE room, choose that room below, press Submit and leave it there for about 5 minutes while Bermuda listens. What it learns is shared by the whole house: every tracked device is matched against the rooms you teach.",
             "data": {
               "area": "The room {device} is in right now"
             }
           }
+        },
+        "abort": {
+          "device_gone": "That device is no longer visible to Bermuda."
         }
       }
     }
@@ -144,7 +155,8 @@
       "no_signal": "That proxy heard the phone only {heard} in 60 seconds (it needs at least 3). Keep the phone awake with its screen on, move closer and try again.",
       "unstable": "The signal was jumpy. Hold the phone still, away from walls and people, and try again.",
       "inconsistent": "The far reading wasn't clearly weaker than the 1 m reading. Check the distances and do both again.",
-      "learn_cannot_start": "Couldn't start: pick a phone that is currently visible and a room."
+      "learn_cannot_start": "Couldn't start: pick a phone that is currently visible and a room.",
+      "place_cannot_start": "Pick a visible device and give the place a name."
     },
     "step": {
       "globalopts": {
@@ -329,7 +341,8 @@
         "description": "What would you like to calibrate?",
         "menu_options": {
           "calibrate_phone": "Distances (hold a phone at 1 m and 3 m)",
-          "learn": "Learn a room (teach it what a room looks like)"
+          "learn": "Learn a room (teach it what a room looks like)",
+          "places": "Places (mark spots: kitchen table, sofa...)"
         }
       },
       "calibrate_hub": {
@@ -366,11 +379,14 @@
       },
       "learn": {
         "title": "Learn a room",
-        "description": "Teach Bermuda what a room looks like to a phone. Pick the phone and the room it is in, then keep the phone there (screen on, roughly where you'd sit) while it listens for about 5 minutes. Use it where the room is often mistaken for its neighbour.",
+        "description": "Teach Bermuda what a room looks like. Pick a phone and the room it is in, name the spot (sofa, by the door, north wall...), then keep the phone there (screen on) while it listens for about 5 minutes. Teach several spots per room, e.g. each wall or doorway; teaching a name again retrains just that spot. What it learns is shared by the whole house: every tracked device is matched against it, loud or quiet.\n\n{trained}",
         "data": {
           "device": "Phone",
           "room": "Room it is in",
-          "forget": "Forget everything learned for this phone instead"
+          "label": "Spot name (sofa, door, north wall...)",
+          "replace": "Start this room over (forget all its spots first)",
+          "forget": "Forget instead (the named spot, or the whole room if no name)",
+          "forget_all": "Forget EVERY room I have taught (everything)"
         }
       },
       "learn_done": {
@@ -383,15 +399,45 @@
         "data": {
           "device": "Phone"
         }
+      },
+      "places": {
+        "title": "Places",
+        "description": "A place is a named spot like **Kitchen table** or **Sofa**. Mark it once with any device (a phone is fine) and **every tracked device** is then matched against it, loud or quiet. Each device's *micro-location* sensor says which place it is at, or just its room when it is not at a marked place.\n\n{existing}",
+        "menu_options": {
+          "place_mark": "Mark a place",
+          "place_forget": "Forget places"
+        }
+      },
+      "place_mark": {
+        "title": "Mark a place",
+        "description": "Put a device (a phone is fine) on the spot, then pick it here. You'll be asked to leave it still for about 15 seconds.\n\n{existing}",
+        "data": {
+          "device": "Device to mark it with",
+          "name": "Name of the place (Kitchen table, Sofa...)",
+          "room": "Room (optional, defaults to where it is now)"
+        }
+      },
+      "place_done": {
+        "title": "Mark a place",
+        "description": "{outcome}"
+      },
+      "place_forget": {
+        "title": "Forget places",
+        "description": "Tick the places to forget.",
+        "data": {
+          "places": "Places"
+        }
       }
     },
     "progress": {
       "measuring": "Measuring, up to {left} seconds left (it stops sooner once it has enough readings). Keep the phone still with its screen on.\n\n{heard}",
-      "learning": "Learning **{room}** with **{device}**. {samples} of {wanted} readings, about {left} left. Keep the phone where it is."
+      "learning": "Learning **{room}** with **{device}**. {samples} of {wanted} readings, about {left} left. Keep the phone where it is.",
+      "placing": "Marking **{place}** for **{device}**: {heard} proxies hear it, about {left} seconds left. Leave it still where it will be kept."
     },
     "abort": {
       "no_devices": "No Bluetooth devices are nearby to calibrate with.",
-      "no_tracked_devices": "No tracked devices to teach. Add one first."
+      "no_tracked_devices": "No tracked devices to teach. Add one first.",
+      "no_places": "No places have been marked yet."
     }
   },
   "services": {
@@ -429,11 +475,11 @@
     },
     "calibrate_location": {
       "name": "Calibrate micro-location",
-      "description": "Record a tracked device's current spot as a named micro-location (eg 'Key hook'), by snapshotting the RF fingerprint from every proxy that can hear it. Re-running with the same device and name re-calibrates that spot.",
+      "description": "Record a spot as a named place using a tracked device that is there now, by snapshotting the signal strength from every proxy that can hear it. Every tracked device is then matched against the place. Re-running with the same name re-calibrates it.",
       "fields": {
         "device": {
           "name": "Device",
-          "description": "The tracked device/item to calibrate. A device name, MAC/UUID, or Home Assistant device id."
+          "description": "The device used to mark the place (a phone is fine). It does not have to be the device you want to find."
         },
         "name": {
           "name": "Location name",
@@ -467,11 +513,11 @@
     },
     "remove_location": {
       "name": "Remove micro-location",
-      "description": "Delete a device's saved micro-location by name.",
+      "description": "Delete a saved place by name. Places belong to the house, so the device is not needed.",
       "fields": {
         "device": {
           "name": "Device",
-          "description": "The device the spot belongs to."
+          "description": "Optional and ignored: places belong to the house."
         },
         "name": {
           "name": "Location name",
@@ -481,11 +527,11 @@
     },
     "rename_location": {
       "name": "Rename micro-location",
-      "description": "Rename a device's saved micro-location.",
+      "description": "Rename a saved place.",
       "fields": {
         "device": {
           "name": "Device",
-          "description": "The device the spot belongs to."
+          "description": "Optional and ignored: places belong to the house."
         },
         "name": {
           "name": "Current name",
@@ -551,25 +597,37 @@
     },
     "learn_room": {
       "name": "Learn room",
-      "description": "Teach Bermuda what a tracked device looks like in a room. Leave the device in that room for about five minutes while it collects samples. Afterwards, whenever Bermuda is unsure which room the device is in, it checks the trained rooms.",
+      "description": "Teach Bermuda what a room looks like. Leave the device in that room for about five minutes while it collects samples. What is learned belongs to the whole house: every tracked device is then matched against the trained rooms, whatever its transmit power, and a clear match wins. Run it again from another spot in the room to add a spot.",
       "fields": {
         "device": {
           "name": "Device",
-          "description": "The tracked device. A device name, MAC/UUID, or Home Assistant device id."
+          "description": "The device that does the teaching (a phone is best). A device name, MAC/UUID, or Home Assistant device id."
         },
         "area": {
           "name": "Area",
           "description": "The Home Assistant area the device is in right now."
+        },
+        "replace": {
+          "name": "Start the room over",
+          "description": "Forget this room's earlier spots first instead of adding another spot."
+        },
+        "label": {
+          "name": "Spot name",
+          "description": "Name this spot in the room (sofa, door, north wall). Teaching the same name again retrains just that spot."
         }
       }
     },
     "reset_learning": {
       "name": "Reset room learning",
-      "description": "Forget every room trained for a device.",
+      "description": "Forget one spot (area + spot name), one trained room (area), or every trained room (neither).",
       "fields": {
-        "device": {
-          "name": "Device",
-          "description": "The tracked device. A device name, MAC/UUID, or Home Assistant device id."
+        "area": {
+          "name": "Area",
+          "description": "The room to forget. Leave empty to forget every trained room."
+        },
+        "label": {
+          "name": "Spot name",
+          "description": "With an area: forget only the spot with this name."
         }
       }
     }

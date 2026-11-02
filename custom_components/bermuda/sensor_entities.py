@@ -420,8 +420,8 @@ class BermudaSensorMicroLocation(BermudaSensor):
 
     @property
     def native_value(self) -> str | None:
-        """The name of the matched spot, or None when not at a known spot."""
-        return self._device.micro_location_name
+        """The name of the matched place, else the room the device is in (None only when it has no room either)."""
+        return self._device.micro_location_name or self._device.area_name
 
     @property
     def icon(self) -> str:
@@ -437,6 +437,7 @@ class BermudaSensorMicroLocation(BermudaSensor):
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Expose match confidence and context for automations/MCP."""
         return {
+            "at_marked_place": self._device.micro_location_name is not None,
             "micro_location_id": self._device.micro_location_id,
             "confidence": self._device.micro_location_confidence,
             "area_name": self._device.area_name,
