@@ -19,7 +19,7 @@ Forked from [foXaCe/bermuda](https://github.com/foXaCe/bermuda), which is itself
   are followed as one device, using the [GoogleFindMy-HA](https://github.com/BSkando/GoogleFindMy-HA) key resolver
   (needed for this feature; Bermuda holds no Google login itself).
 - **Prompted room learning**: when a device's room is poorly recognised, Bermuda offers to learn it (Repairs prompt),
-  with `learn_room` / `reset_learning` services, a training-room select and Learn/Reset buttons.
+  with a guided **Configure → Calibrate → Learn a room** screen and `learn_room` / `reset_learning` services.
 - **Reworked device picker**: tick-box lists, devices labelled with what they are and roughly how far away, and
   hide-by-kind (for example all Apple devices at once).
 - **Guided auto-calibration**: no more guessing reference power, attenuation or per-proxy offsets. Hold a phone
@@ -188,10 +188,11 @@ this fork watches for those and offers help:
   more minutes, a **Repairs** notice asks *"Train Keys?"*.
   Pick the room it's in, leave it there for about five minutes, and Bermuda learns what its signal
   looks like from each proxy in that room. Dismissing the notice means it won't nag again.
-- From then on, only when Bermuda is unsure about that device, it checks the rooms you trained and
-  overrides the distance answer when one clearly fits.
-- You can also train on demand: every tracked device has a **Training room** selector with
-  **Learn this room** and **Reset room learning** buttons, and there are `bermuda.learn_room` /
+- From then on Bermuda keeps checking the rooms you trained and overrides the distance answer
+  whenever the live readings clearly fit one of them (and fit it better than any other trained room).
+  Train every room that gets confused with a neighbour, not just one.
+- You can also train on demand: **Configure → Calibrate → Learn a room** shows a live countdown while
+  it listens (tick *Forget* there to wipe a phone's training), and there are `bermuda.learn_room` /
   `bermuda.reset_learning` actions.
 - The threshold, the five minutes, and the whole feature can be changed under *Global options →
   Room learning*. Turning it off stops the monitoring and the notices.

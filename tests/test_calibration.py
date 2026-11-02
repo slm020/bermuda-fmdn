@@ -401,3 +401,37 @@ async def test_measurement_ends_early_once_it_has_enough_readings(hass, setup_be
         result = await hass.config_entries.options.async_configure(result["flow_id"])
     assert result["step_id"] == "calibrate_ready"  # got on to step 2 long before the 30 s were up
     assert "Step 2 of 2" in result["description_placeholders"]["instruction"]
+
+
+async def test_calibration_entries_are_titled_by_proxy_name_not_address(hass, setup_bermuda_entry):
+    from custom_components.bermuda.calibration import apply_scanner_offsets, retitle_calibration_subentries
+
+    entry = setup_bermuda_entry
+
+    def proxies():
+        # Saving a calibration entry reloads the integration, which drops hand-built devices.
+        coordinator = entry.runtime_data.coordinator
+        lounge = _scanner(coordinator, "11:11:11:11:11:11", "lounge", "Lounge")
+        lounge.name = "Lounge Triangulator"
+        kitchen = _scanner(coordinator, "22:22:22:22:22:22", "kitchen", "Kitchen")
+        kitchen.name = "Kitchen Triangulator"
+        return lounge, kitchen
+
+    def titles():
+        return {se.data["scanner"]: se.title for se in entry.subentries.values() if se.subentry_type == "calibration"}
+
+    lounge, kitchen = proxies()
+    apply_scanner_offsets(hass, entry, {lounge.address: 3.0, kitchen.address: 1.0})
+    assert titles() == {lounge.address: "Lounge Triangulator", kitchen.address: "Kitchen Triangulator"}
+
+    # Old entries titled by a bare address are renamed once; a title the user chose is left alone.
+    await hass.async_block_till_done()
+    old = next(se for se in entry.subentries.values() if se.data["scanner"] == kitchen.address)
+    hass.config_entries.async_update_subentry(entry, old, title=kitchen.address)
+    chosen = next(se for se in entry.subentries.values() if se.data["scanner"] == lounge.address)
+    hass.config_entries.async_update_subentry(entry, chosen, title="My lounge proxy")
+    await hass.async_block_till_done()
+    proxies()
+    assert retitle_calibration_subentries(hass, entry) == 1
+    assert retitle_calibration_subentries(hass, entry) == 0
+    assert titles() == {lounge.address: "My lounge proxy", kitchen.address: "Kitchen Triangulator"}

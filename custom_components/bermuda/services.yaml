@@ -191,8 +191,8 @@ learn_room:
   name: Learn room
   description: >-
     Teach Bermuda what a tracked device looks like in a room. Leave the device in
-    that room for about five minutes while it collects samples. Afterwards,
-    whenever Bermuda is unsure which room the device is in, it checks the trained rooms.
+    that room for about five minutes while it collects samples. Afterwards the
+    live readings are checked against the trained rooms and a clear match wins.
   fields:
     device:
       required: true

@@ -97,7 +97,6 @@ class BermudaLearningMixin:
         self._train_prompts: set[str] = set()  # device keys with an open "train it?" prompt
         self._training: dict[str, _TrainingRun] = {}
         self.last_training: dict[str, dict[str, Any]] = {}  # device address -> how its last run ended
-        self.training_room: dict[str, str] = {}  # device address -> area id picked on the select entity
         entry.async_create_background_task(
             hass, self.room_profiles.async_load(), "Load Bermuda room profiles", eager_start=True
         )
@@ -334,7 +333,7 @@ class BermudaLearningMixin:
     # --- services -----------------------------------------------------------
 
     def _register_learning_services(self, hass: HomeAssistant, entry: BermudaConfigEntry) -> None:
-        """Register learn_room / reset_learning (the same actions the buttons and Repairs flow use)."""
+        """Register learn_room / reset_learning (the same actions the Calibrate screen and Repairs flow use)."""
         text = cv.string
         services = [
             (

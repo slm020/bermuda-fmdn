@@ -18,6 +18,7 @@ from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 
+from .calibration import retitle_calibration_subentries
 from .const import (
     _LOGGER,
     CONF_IRK,
@@ -121,6 +122,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: BermudaConfigEntry) -> b
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Before the update listener is attached, so renaming entries doesn't trigger a reload.
+    retitle_calibration_subentries(hass, entry)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     # Register voice/Assist intents so micro-locations are reachable from MCP

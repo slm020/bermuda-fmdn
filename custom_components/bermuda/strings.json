@@ -84,17 +84,6 @@
           "moving": "Moving",
           "stationary": "Stationary"
         }
-      },
-      "training_room": {
-        "name": "Training room"
-      }
-    },
-    "button": {
-      "learn_room": {
-        "name": "Learn this room"
-      },
-      "reset_learning": {
-        "name": "Reset room learning"
       }
     }
   },
@@ -380,7 +369,8 @@
         "description": "Teach Bermuda what a room looks like to a phone. Pick the phone and the room it is in, then keep the phone there (screen on, roughly where you'd sit) while it listens for about 5 minutes. Use it where the room is often mistaken for its neighbour.",
         "data": {
           "device": "Phone",
-          "room": "Room it is in"
+          "room": "Room it is in",
+          "forget": "Forget everything learned for this phone instead"
         }
       },
       "learn_done": {

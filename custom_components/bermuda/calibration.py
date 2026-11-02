@@ -98,6 +98,8 @@ def apply_scanner_offsets(hass: HomeAssistant, entry: BermudaConfigEntry, offset
         for se in entry.subentries.values()
         if se.subentry_type == SUBENTRY_TYPE_CALIBRATION
     }
+    # Names first: saving an entry can reload the integration, after which the live devices are gone.
+    titles = {scanner: _scanner_title(entry, scanner) for scanner in offsets}
     for scanner, offset in offsets.items():
         data = MappingProxyType({CONF_SCANNER: scanner, CONF_RSSI_OFFSET: offset})
         if (subentry := existing.get(scanner)) is not None:
@@ -105,5 +107,35 @@ def apply_scanner_offsets(hass: HomeAssistant, entry: BermudaConfigEntry, offset
         else:
             hass.config_entries.async_add_subentry(
                 entry,
-                ConfigSubentry(data=data, subentry_type=SUBENTRY_TYPE_CALIBRATION, title=scanner, unique_id=scanner),
+                ConfigSubentry(
+                    data=data,
+                    subentry_type=SUBENTRY_TYPE_CALIBRATION,
+                    title=titles[scanner],
+                    unique_id=scanner,
+                ),
             )
+
+
+def _scanner_title(entry: BermudaConfigEntry, scanner: str) -> str:
+    """A proxy's friendly name for a calibration entry's title, falling back to its address."""
+    device = entry.runtime_data.coordinator.devices.get(scanner)
+    return (device.name if device and device.name else None) or scanner
+
+
+def retitle_calibration_subentries(hass: HomeAssistant, entry: BermudaConfigEntry) -> int:
+    """
+    Give calibration entries still titled by a bare address the proxy's friendly name.
+
+    Only titles that are exactly the address are touched, so a name the user chose is kept and
+    this settles after one pass. Returns how many were renamed.
+    """
+    renamed = 0
+    for se in list(entry.subentries.values()):
+        if se.subentry_type != SUBENTRY_TYPE_CALIBRATION:
+            continue
+        scanner = se.data.get(CONF_SCANNER)
+        title = _scanner_title(entry, scanner) if scanner else None
+        if scanner and se.title == scanner and title and title != scanner:
+            hass.config_entries.async_update_subentry(entry, se, title=title)
+            renamed += 1
+    return renamed

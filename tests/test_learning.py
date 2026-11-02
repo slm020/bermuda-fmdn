@@ -21,7 +21,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import slugify
 
 from tests.flow_helpers import goto_setting
-from custom_components.bermuda.button import BermudaLearnRoomButton, BermudaResetLearningButton
 from custom_components.bermuda.const import (
     CONF_LEARNING_ENABLED,
     CONF_LEARNING_SUSTAINED,
@@ -42,7 +41,6 @@ from custom_components.bermuda.room_learning import (
     RoomProfile,
     match_rooms,
 )
-from custom_components.bermuda.select import BermudaTrainingRoomSelect
 from tests.test_services import _make_scanner, _make_tracked_device, _set_distance
 
 # ---------------------------------------------------------------------------
@@ -657,54 +655,24 @@ async def test_repairs_flow_rejects_unknown_issues(hass):
 # ---------------------------------------------------------------------------
 
 
-async def test_training_room_select_and_buttons(hass, setup_bermuda_entry, clock):
-    coordinator, keys, _s1, _s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
-    entry = setup_bermuda_entry
-
-    select = BermudaTrainingRoomSelect(coordinator, entry, keys.address)
-    select.async_write_ha_state = MagicMock()
-    assert "Kitchen" in select.options
-    assert select.current_option is None
-    await select.async_select_option("Kitchen")
-    assert select.current_option == "Kitchen"
-    await select.async_select_option("No such room")  # ignored
-    assert select.current_option == "Kitchen"
-    assert select.unique_id.endswith("_training_room")
-
-    learn = BermudaLearnRoomButton(coordinator, entry, keys.address)
-    reset = BermudaResetLearningButton(coordinator, entry, keys.address)
-    assert learn.unique_id.endswith("_learn_room")
-    assert reset.unique_id.endswith("_reset_learning")
-
-    await learn.async_press()
-    assert coordinator.training_status(keys.address)["area_id"] == kitchen.id
-    await reset.async_press()
-    assert coordinator.training_status(keys.address)["training"] is False
-
-    coordinator.training_room.clear()
-    with pytest.raises(ServiceValidationError, match="Pick a training room"):
-        await learn.async_press()
-
-
-async def test_select_forgets_a_deleted_area(hass, setup_bermuda_entry, clock):
-    coordinator, keys, *_rest, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
-    select = BermudaTrainingRoomSelect(coordinator, setup_bermuda_entry, keys.address)
-    coordinator.training_room[keys.address] = kitchen.id
-    ar.async_get(hass).async_delete(kitchen.id)
-    assert select.current_option is None
-
-
-async def test_new_tracked_devices_get_the_learning_entities(hass, setup_bermuda_entry, clock):
-    from homeassistant.helpers import entity_registry as er  # noqa: PLC0415
-
-    coordinator, keys, *_rest = await _setup(hass, setup_bermuda_entry, clock)
-    async_dispatcher_send(hass, SIGNAL_DEVICE_NEW, keys.address)
-    await hass.async_block_till_done()
-    async_dispatcher_send(hass, SIGNAL_DEVICE_NEW, keys.address)  # a repeat creates nothing new
-    await hass.async_block_till_done()
-    unique_ids = {e.unique_id for e in er.async_get(hass).entities.values() if e.platform == DOMAIN}
-    for suffix in ("training_room", "learn_room", "reset_learning"):
-        assert f"{keys.unique_id}_{suffix}" in unique_ids
+async def test_learn_screen_can_forget_what_was_learned(hass, setup_bermuda_entry, clock):
+    coordinator, keys, s1, s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
+    _train(coordinator, keys, s1, s2, kitchen, -50, -75, clock)
+    assert coordinator.room_profiles.get(keys.address)
+    flows = hass.config_entries.options
+    result = await flows.async_init(setup_bermuda_entry.entry_id)
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "calibrate"})
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "learn"})
+    result = await flows.async_configure(result["flow_id"], user_input={"device": keys.address.upper(), "forget": True})
+    assert result["step_id"] == "learn_done"
+    assert "Forgot" in result["description_placeholders"]["outcome"]
+    assert not coordinator.room_profiles.get(keys.address)
+    # Without Forget, a room is required.
+    result = await flows.async_configure(result["flow_id"], user_input={})
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "calibrate"})
+    result = await flows.async_configure(result["flow_id"], user_input={"next_step_id": "learn"})
+    result = await flows.async_configure(result["flow_id"], user_input={"device": keys.address.upper()})
+    assert result["errors"] == {"base": "learn_cannot_start"}
 
 
 # ---------------------------------------------------------------------------

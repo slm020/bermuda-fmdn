@@ -32,7 +32,6 @@ REPAIR_TRAIN_PREFIX = "train_"  # + slugified device key: "this device's room is
 
 # Platforms
 PLATFORMS = [
-    Platform.BUTTON,
     Platform.SENSOR,
     Platform.DEVICE_TRACKER,
     Platform.NUMBER,

@@ -3,7 +3,7 @@
 
 Pick the phone and the room it is in, then keep it there while the progress screen shows the
 readings collected and the time left. The training itself is the coordinator's (the same one
-the Learn button and ``bermuda.learn_room`` start); this only watches it and reports the result.
+``bermuda.learn_room`` and the Repairs prompt start); this only watches it and reports the result.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 import voluptuous as vol
 from homeassistant.config_entries import OptionsFlow
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers.selector import SelectOptionDict, SelectSelector, SelectSelectorConfig, SelectSelectorMode
+from homeassistant.helpers.selector import BooleanSelector, SelectOptionDict, SelectSelector, SelectSelectorConfig, SelectSelectorMode
 
 from .calibration import CHUNK_SECONDS
 from .const import LEARN_INTERVAL, LEARN_MAX_SECONDS
@@ -56,6 +56,8 @@ class LearnFlowMixin(OptionsFlow):
 
     def _learn_room_name(self) -> str:
         assert self._learn is not None  # noqa: S101
+        if not self._learn["area_id"]:
+            return ""
         return self._learn_coordinator.resolve_area_name(self._learn["area_id"]) or self._learn["area_id"]
 
     def _learn_device_name(self) -> str:
@@ -69,12 +71,17 @@ class LearnFlowMixin(OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             device = coordinator.devices.get(user_input["device"].lower())
-            self._learn = {"device": user_input["device"].lower(), "area_id": user_input["room"]}
+            room = user_input.get("room")
+            forget = bool(user_input.get("forget"))
+            self._learn = {"device": user_input["device"].lower(), "area_id": room, "forget": forget}
             try:
-                if device is None:
-                    msg = "That device is no longer visible."
+                if device is None or (not forget and not room):
+                    msg = "Pick a visible device and a room."
                     raise ServiceValidationError(msg)  # noqa: TRY301
-                coordinator.start_training(device, user_input["room"])
+                if forget:
+                    coordinator.reset_learning(device)
+                    return await self.async_step_learn_done()
+                coordinator.start_training(device, room)
             except ServiceValidationError:
                 errors["base"] = "learn_cannot_start"
             else:
@@ -92,12 +99,13 @@ class LearnFlowMixin(OptionsFlow):
                         [SelectOptionDict(value=d.address.upper(), label=device_label(d)) for d in devices],
                         multiple=False,
                     ),
-                    vol.Required("room"): SelectSelector(
+                    vol.Optional("room"): SelectSelector(
                         SelectSelectorConfig(
                             options=[SelectOptionDict(value=a.id, label=a.name) for a in areas],
                             mode=SelectSelectorMode.DROPDOWN,
                         )
                     ),
+                    vol.Optional("forget", default=False): BooleanSelector(),
                 }
             ),
             errors=errors or None,
@@ -147,6 +155,12 @@ class LearnFlowMixin(OptionsFlow):
         if user_input is not None:
             self._learn = None
             return await self.async_step_init()
+        if self._learn.get("forget"):
+            return self.async_show_form(
+                step_id="learn_done",
+                data_schema=vol.Schema({}),
+                description_placeholders={"outcome": f"Forgot every room learned for **{self._learn_device_name()}**."},
+            )
         result = self._learn_coordinator.last_training.get(self._learn["device"]) or {}
         name, room, samples = self._learn_device_name(), self._learn_room_name(), result.get("samples", 0)
         if result.get("kept"):
