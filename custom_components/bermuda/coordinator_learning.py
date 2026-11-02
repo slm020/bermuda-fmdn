@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 
 import voluptuous as vol
 from bluetooth_data_tools import monotonic_time_coarse
+from homeassistant.components import persistent_notification
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -62,6 +63,7 @@ class _TrainingRun:
     profile: RoomProfile
     last_sample: float
     last_stamp: float = 0.0
+    shown: int = -1  # sample count last shown in the progress notification
 
 
 class BermudaLearningMixin:
@@ -256,7 +258,45 @@ class BermudaLearningMixin:
             area_id, now, RoomProfile(area_id), last_sample=now - LEARN_INTERVAL
         )
         self._withdraw_train_prompt(device.address, force=True)
+        self._training_notice(device, self._training[device.address])
         return self.training_status(device.address)
+
+    def _training_notice_id(self, address: str) -> str:
+        return f"bermuda_training_{slugify(address)}"
+
+    def _training_notice(self, device: BermudaDevice, run: _TrainingRun, *, now: float | None = None) -> None:
+        """Show (or refresh) the live progress notification for a training run."""
+        if now is None:
+            now = monotonic_time_coarse()
+        samples = run.profile.samples
+        run.shown = samples
+        left = max(0, min((LEARN_SAMPLES - samples) * LEARN_INTERVAL, int(LEARN_MAX_SECONDS - (now - run.started))))
+        room = self.resolve_area_name(run.area_id) or run.area_id
+        persistent_notification.async_create(
+            self.hass,
+            f"Keep **{device.name}** in the **{room}** and stay roughly where you are.\n\n"
+            f"Readings: **{samples} of {LEARN_SAMPLES}** — about **{left // 60}:{left % 60:02d}** left.",
+            title=f"Learning {room}",
+            notification_id=self._training_notice_id(device.address),
+        )
+
+    def _training_notice_done(self, device: BermudaDevice, run: _TrainingRun, *, kept: bool) -> None:
+        """Replace the progress notification with the outcome."""
+        room = self.resolve_area_name(run.area_id) or run.area_id
+        samples = run.profile.samples
+        if kept:
+            message = f"Done. {device.name} is trained for **{room}** from {samples} readings."
+        else:
+            message = (
+                f"Only {samples} readings were heard, so nothing was saved. "
+                f"Keep {device.name} awake and in the {room} and try again."
+            )
+        persistent_notification.async_create(
+            self.hass,
+            message,
+            title=f"Learning {room}: {'done' if kept else 'not saved'}",
+            notification_id=self._training_notice_id(device.address),
+        )
 
     def training_status(self, address: str) -> dict[str, Any]:
         """Describe a device's training state, for service responses and diagnostics."""
@@ -280,6 +320,8 @@ class BermudaLearningMixin:
             if freshest > run.last_stamp:  # only genuinely new adverts, never the same one twice
                 run.profile.add_sample(live)
                 run.last_sample, run.last_stamp = now, freshest
+                if run.profile.samples != run.shown:
+                    self._training_notice(device, run, now=now)
         if run.profile.samples >= LEARN_SAMPLES or now - run.started > LEARN_MAX_SECONDS:
             self._finish_training(device, run)
 
@@ -293,6 +335,7 @@ class BermudaLearningMixin:
                 self.resolve_area_name(run.area_id) or run.area_id,
                 run.profile.samples,
             )
+            self._training_notice_done(device, run, kept=False)
             return
         self.room_profiles.put(device.address, run.profile)
         self._confidence.pop(device.address, None)
@@ -303,10 +346,12 @@ class BermudaLearningMixin:
             self.resolve_area_name(run.area_id) or run.area_id,
             run.profile.samples,
         )
+        self._training_notice_done(device, run, kept=True)
 
     def reset_learning(self, device: BermudaDevice) -> bool:
         """Forget everything trained for a device (and any run in progress). Returns whether anything was trained."""
-        self._training.pop(device.address, None)
+        if self._training.pop(device.address, None) is not None:
+            persistent_notification.async_dismiss(self.hass, self._training_notice_id(device.address))
         self._confidence.pop(device.address, None)
         self._low_since.pop(device.address, None)
         self._withdraw_train_prompt(device.address, force=True)

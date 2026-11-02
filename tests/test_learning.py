@@ -19,6 +19,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import slugify
+from homeassistant.components import persistent_notification
 
 from tests.flow_helpers import goto_setting
 from custom_components.bermuda.button import BermudaLearnRoomButton, BermudaResetLearningButton
@@ -406,6 +407,38 @@ def _train(coordinator, keys, s1, s2, area, rssi1, rssi2, clock, base_stamp=1.0)
         wobble = 1 if i % 2 else -1
         _hear(keys, s1, s2, rssi1 + wobble, rssi2 - wobble, stamp=base_stamp + i)
         coordinator._refresh_learning()  # noqa: SLF001
+
+
+async def test_training_shows_a_live_progress_notification(hass, setup_bermuda_entry, clock):
+    # conftest patches persistent_notification.async_create/async_dismiss with mocks.
+    coordinator, keys, s1, s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
+    notice_id = coordinator._training_notice_id(keys.address)  # noqa: SLF001
+    create, dismiss = persistent_notification.async_create, persistent_notification.async_dismiss
+
+    def last_message() -> str:
+        assert create.call_args.kwargs["notification_id"] == notice_id
+        return create.call_args.args[1]
+
+    coordinator.start_training(keys, kitchen.id)
+    assert f"0 of {LEARN_SAMPLES}" in last_message()
+
+    _hear(keys, s1, s2, -50, -75, stamp=1.0)
+    clock.now += LEARN_INTERVAL
+    coordinator._refresh_learning()  # noqa: SLF001
+    assert f"1 of {LEARN_SAMPLES}" in last_message()
+
+    coordinator.reset_learning(keys)  # a reset dismisses the progress notice
+    dismiss.assert_called_with(hass, notice_id)
+
+    _train(coordinator, keys, s1, s2, kitchen, -50, -75, clock)
+    assert "Done" in last_message()  # finishing replaces it with the outcome
+
+    # Too few readings by the deadline: the notice says nothing was saved.
+    coordinator.reset_learning(keys)
+    coordinator.start_training(keys, kitchen.id)
+    clock.now += LEARN_MAX_SECONDS + 1
+    coordinator._refresh_learning()  # noqa: SLF001
+    assert "nothing was saved" in last_message()
 
 
 async def test_training_collects_fresh_samples_and_saves_the_room(hass, setup_bermuda_entry, clock):
