@@ -207,7 +207,7 @@ FMDN_EID_LENGTHS: Final = (20, 32)  # legacy secp160r1 and P-256 EIDs
 FMDN_ADDRESS_PREFIX: Final = "fmdn:"
 FMDN_RETRY_INTERVAL: Final = 60  # seconds between re-resolving an advert that had no match
 
-PRUNE_TIME_INTERVAL = 180  # Every 3m, prune stale devices
+PRUNE_TIME_INTERVAL = 60  # Every 1m, prune stale devices
 # ### Note about timeouts: Bluez and HABT cache for 180 or 195 seconds. Setting
 # timeouts below that may result in prune/create/prune churn, but as long as
 # we only re-create *fresh* devices the risk is low.
@@ -226,7 +226,7 @@ PRUNE_TIME_INTERVAL = 180  # Every 3m, prune stale devices
 # IRK/Private-BLE churn is unaffected - resolvable addresses use their own timeouts
 # (PRUNE_TIME_UNKNOWN_IRK / PRUNE_TIME_KNOWN_IRK).
 PRUNE_TIME_DEFAULT = 7200  # Max age of regular device entries (2h, was 24h)
-PRUNE_TIME_UNKNOWN_IRK = 240  # Resolvable Private addresses change often, prune regularly.
+PRUNE_TIME_UNKNOWN_IRK = 120  # Resolvable Private addresses change often, prune regularly.
 # see Bluetooth Core Spec, Vol3, Part C, Appendix A, Table A.1: Defined GAP timers
 PRUNE_TIME_KNOWN_IRK: Final[int] = 16 * 60  # spec "recommends" 15 min max address age. Round up to 16 :-)
 
@@ -316,9 +316,10 @@ CYCLE_TIME_ERROR: Final = 2.0
 # Cooldown for the coordinator's request_refresh debouncer (seconds).
 DEBOUNCE_COOLDOWN: Final = 1.0
 
-# Device pickers (options flow scan / selectdevices steps): drop random MACs
-# unseen for longer than this - they have almost certainly rotated away.
-PICKER_STALE_AGE: Final = 60 * 60 * 2  # seconds
+# Device pickers: drop rotating (resolvable random) MACs unseen for longer than this.
+# Phones change address every few minutes (some burst through ten in a minute), so
+# anything not heard for ~1.5 min has rotated away and would only be a ghost copy.
+PICKER_STALE_AGE: Final = 90  # seconds
 # Scanner health table thresholds (age of last advert, seconds).
 SCANNER_AGE_FRESH: Final = 2
 SCANNER_AGE_WORRY: Final = 10

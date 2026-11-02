@@ -217,7 +217,11 @@ class BermudaOptionsFlowHandler(CalibrationFlowMixin, OptionsFlow):
             rssi = strongest_rssi(device)
             return rssi if rssi is not None else -9999.0
 
-        found.sort(key=_signal, reverse=True)
+        def _is_tracked(device: BermudaDevice) -> bool:
+            return device.address.upper() in tracked or device.create_sensor
+
+        # Already-tracked devices (your own phone, by its name) first, then strongest signal.
+        found.sort(key=lambda d: (not _is_tracked(d), -_signal(d)))
         return found
 
     def _hide(self, addresses: list[str], kinds: list[str]) -> None:
