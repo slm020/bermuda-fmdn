@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 from .const import (
     LEARN_FLAP_FULL,
     LEARN_FLAP_MAX_DWELL,
+    LEARN_FLAP_MIN_DWELL,
     LEARN_MEDIAN_COUNT,
     LEARN_NEAR_EQUAL_MARGIN,
     LEARN_WINDOW_SECONDS,
@@ -76,6 +77,23 @@ class ConfidenceResult:
     near_equal: float
     floor_bounce: float
     top_areas: tuple[str, ...]  # most-seen areas in the window, for the user-facing prompt
+
+
+def _drop_blips(changes: list[tuple[float, str]], min_dwell: float) -> list[tuple[float, str]]:
+    """
+    Remove values that lasted less than ``min_dwell`` seconds (one- or two-second blips).
+
+    The last entry is the current value and always kept. Neighbours that become equal once a
+    blip is gone are merged, so A -> B(1 s) -> A reads as one long stay in A.
+    """
+    kept: list[tuple[float, str]] = []
+    for i, (stamp, value) in enumerate(changes):
+        if i + 1 < len(changes) and changes[i + 1][0] - stamp < min_dwell:
+            continue
+        if kept and kept[-1][1] == value:
+            continue
+        kept.append((stamp, value))
+    return kept
 
 
 def _quick_returns(changes: list[tuple[float, str]], max_dwell: float) -> int:
@@ -142,13 +160,16 @@ class ConfidenceTracker:
         """Score the window. Until half a window has been observed there is no evidence of a problem."""
         if self._started is None or now - self._started < self._window / 2:
             return ConfidenceResult(1.0, 0.0, 0.0, 0.0, ())
-        flapping = min(1.0, _quick_returns(list(self._areas), LEARN_FLAP_MAX_DWELL) / LEARN_FLAP_FULL)
-        floor_bounce = min(1.0, _quick_returns(list(self._floors), LEARN_FLAP_MAX_DWELL) / (LEARN_FLAP_FULL / 2))
+        # A blip of a second or two is noise the user never sees (the dashboard settles straight back), not doubt.
+        areas = _drop_blips(list(self._areas), LEARN_FLAP_MIN_DWELL)
+        floors = _drop_blips(list(self._floors), LEARN_FLAP_MIN_DWELL)
+        flapping = min(1.0, _quick_returns(areas, LEARN_FLAP_MAX_DWELL) / LEARN_FLAP_FULL)
+        floor_bounce = min(1.0, _quick_returns(floors, LEARN_FLAP_MAX_DWELL) / (LEARN_FLAP_FULL / 2))
         near_equal = sum(1 for _t, near in self._margins if near) / len(self._margins) if self._margins else 0.0
         penalty = min(
             1.0, WEIGHT_FLAPPING * flapping + WEIGHT_NEAR_EQUAL * near_equal + WEIGHT_FLOOR_BOUNCE * floor_bounce
         )
-        top = tuple(area for area, _count in Counter(a for _t, a in self._areas).most_common(2))
+        top = tuple(area for area, _count in Counter(a for _t, a in areas).most_common(2))
         return ConfidenceResult(round(1.0 - penalty, 3), flapping, near_equal, floor_bounce, top)
 
 

@@ -36,6 +36,7 @@ from .const import (
     LEARN_INTERVAL,
     LEARN_MAX_SECONDS,
     LEARN_MIN_SAMPLES,
+    LEARN_PROMPT_QUIET,
     LEARN_RECOVERY_BONUS,
     LEARN_SAMPLES,
     REPAIR_TRAIN_PREFIX,
@@ -105,6 +106,8 @@ class BermudaLearningMixin:
         self._confidence: dict[str, ConfidenceTracker] = {}
         self._low_since: dict[str, float] = {}
         self._train_prompts: set[str] = set()  # device keys with an open "train it?" prompt
+        # device key -> monotonic time before which it is not prompted (it is training, or was just trained)
+        self._prompt_quiet_until: dict[str, float] = {}
         self._training: dict[str, _TrainingRun] = {}
         self.last_training: dict[str, dict[str, Any]] = {}  # training device address -> how its last run ended
         entry.async_create_background_task(
@@ -180,6 +183,11 @@ class BermudaLearningMixin:
         """Raise a "train it?" prompt once confidence has been poor long enough; withdraw it on recovery."""
         key = device.address
         untrained = [a for a in result.top_areas if a not in self.room_profiles.rooms()]
+        if key in self._training or now < self._prompt_quiet_until.get(key, 0.0):
+            # Training right now, or the user has just acted on it: asking again would restart the run
+            # (or nag), and the readings during a run say nothing about how well rooms are recognised.
+            self._low_since.pop(key, None)
+            return
         if result.top_areas and not untrained:
             # Every room it flaps between is already trained house-wide: nothing left to offer.
             self._low_since.pop(key, None)
@@ -273,6 +281,7 @@ class BermudaLearningMixin:
             replace=replace,
             label=label.strip(),
         )
+        self._prompt_quiet_until[device.address] = now + LEARN_MAX_SECONDS + LEARN_PROMPT_QUIET
         self._withdraw_train_prompt(device.address, force=True)
         return self.training_status(device.address)
 
@@ -306,6 +315,7 @@ class BermudaLearningMixin:
     def _finish_training(self, device: BermudaDevice, run: _TrainingRun) -> None:
         """Keep the run if it gathered enough samples, otherwise discard it."""
         del self._training[device.address]
+        self._prompt_quiet_until[device.address] = monotonic_time_coarse() + LEARN_PROMPT_QUIET
         self.last_training[device.address] = {
             "area_id": run.area_id,
             "samples": run.profile.samples,

@@ -29,6 +29,7 @@ from custom_components.bermuda.const import (
     DOMAIN,
     LEARN_INTERVAL,
     LEARN_MAX_SECONDS,
+    LEARN_PROMPT_QUIET,
     LEARN_SAMPLES,
     REPAIR_TRAIN_PREFIX,
     SIGNAL_DEVICE_NEW,
@@ -840,6 +841,8 @@ async def test_prompt_is_only_for_rooms_that_are_not_trained_yet(hass, setup_ber
     _train(coordinator, keys, s1, s2, kitchen, -50, -75, clock)  # only the kitchen is trained
     _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1, stamp=900.0)
     _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=900)
+    assert _issue(hass, keys) is None  # just trained: it stays quiet for a while
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=LEARN_PROMPT_QUIET)
     assert _issue(hass, keys) is not None  # the hall is still untrained, so it is worth asking
     assert "Hall" in _issue(hass, keys).translation_placeholders["areas"]
     assert "Kitchen" not in _issue(hass, keys).translation_placeholders["areas"]
@@ -885,7 +888,7 @@ async def test_services_learn_and_reset(hass, setup_bermuda_entry, clock):
 async def test_repairs_flow_offers_teach_or_skip_then_asks_for_the_room(hass, setup_bermuda_entry, clock):
     coordinator, keys, _s1, _s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
     flow = await async_create_fix_flow(hass, f"{REPAIR_TRAIN_PREFIX}x", {"device_key": keys.address})
-    flow.hass = hass
+    flow.hass, flow.issue_id = hass, f"{REPAIR_TRAIN_PREFIX}x"
 
     menu = await flow.async_step_init()
     assert menu["type"] is FlowResultType.MENU
@@ -899,9 +902,72 @@ async def test_repairs_flow_offers_teach_or_skip_then_asks_for_the_room(hass, se
     form = await flow.async_step_train()
     assert form["type"] is FlowResultType.FORM
     assert form["step_id"] == "train"
-    done = await flow.async_step_train({"area": kitchen.id})
-    assert done["type"] is FlowResultType.CREATE_ENTRY
+    flow.flow_id, flow.handler = "f1", DOMAIN
+    shown = await flow.async_step_train({"area": kitchen.id})
+    assert shown["type"] is FlowResultType.SHOW_PROGRESS  # the screen stays open and counts down
+    assert shown["description_placeholders"]["room"] == "Kitchen"
     assert coordinator.training_status(keys.address)["area_id"] == kitchen.id
+    flow._task.cancel()  # noqa: SLF001
+
+
+async def test_repairs_flow_counts_down_then_says_it_was_saved(hass, setup_bermuda_entry, clock, monkeypatch):
+    from custom_components.bermuda import repairs
+
+    monkeypatch.setattr(repairs, "CHUNK_SECONDS", 0.01)
+    coordinator, keys, s1, s2, kitchen, _hall = await _setup(hass, setup_bermuda_entry, clock)
+    flow = await async_create_fix_flow(hass, f"{REPAIR_TRAIN_PREFIX}x", {"device_key": keys.address})
+    flow.hass, flow.flow_id, flow.handler, flow.issue_id = hass, "f1", DOMAIN, f"{REPAIR_TRAIN_PREFIX}x"
+    shown = await flow.async_step_train({"area": kitchen.id})
+    assert shown["step_id"] == "train_run"
+    assert shown["description_placeholders"]["samples"] == "0"
+
+    await flow._task  # noqa: SLF001
+    nxt = await flow.async_step_train_run()
+    assert nxt["type"] is FlowResultType.SHOW_PROGRESS_DONE
+    assert nxt["step_id"] == "train_listen"  # alternates so the frontend refreshes
+
+    for i in range(LEARN_SAMPLES + 2):
+        clock.now += LEARN_INTERVAL
+        _hear(keys, s1, s2, -50 + (i % 2), -75, stamp=10.0 + i)
+        coordinator._refresh_learning()  # noqa: SLF001
+    shown = await flow.async_step_train_listen()
+    await flow._task  # noqa: SLF001
+    nxt = await flow.async_step_train_listen()
+    assert nxt["step_id"] == "train_done"
+    done = await flow.async_step_train_done()
+    assert "**Kitchen** is trained" in done["description_placeholders"]["outcome"]
+    closed = await flow.async_step_train_done({})
+    assert closed["type"] is FlowResultType.CREATE_ENTRY
+    assert kitchen.id in coordinator.room_profiles.rooms()
+
+
+async def test_no_prompt_while_training_or_just_after(hass, setup_bermuda_entry, clock):
+    coordinator, keys, s1, s2, kitchen, hall = await _setup(hass, setup_bermuda_entry, clock)
+    _hear(keys, s1, s2, -50, -55, d1=2.0, d2=2.1)
+    coordinator.start_training(keys, hall.id)
+    _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=900)  # flapping during the run
+    assert _issue(hass, keys) is None  # asking now would restart the run
+
+
+async def test_one_second_blips_are_not_flapping():
+    tracker = ConfidenceTracker()
+    now = 0.0
+    tracker.add(now, "living", None, None)
+    for _ in range(30):  # every 10 s the answer blips to another room for one second
+        now += 9
+        tracker.add(now, "bedroom", None, None)
+        now += 1
+        tracker.add(now, "living", None, None)
+    result = tracker.result(now)
+    assert result.flapping == 0.0
+    assert result.top_areas == ("living",)
+
+    for _ in range(10):  # real 30-second stays in the other room still count
+        now += 30
+        tracker.add(now, "bedroom", None, None)
+        now += 30
+        tracker.add(now, "living", None, None)
+    assert tracker.result(now).flapping == 1.0
 
 
 async def test_repairs_flow_skip_dismisses_the_prompt_for_good(hass, setup_bermuda_entry, clock):

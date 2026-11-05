@@ -207,14 +207,21 @@
           },
           "train": {
             "title": "Teach Bermuda a room",
-            "description": "Take **{device}** to ONE room, choose that room below, press Submit and leave it there for about 5 minutes while Bermuda listens. What it learns is shared by the whole house: every tracked device is matched against the rooms you teach.",
+            "description": "Take **{device}** to ONE room, choose that room below and press Submit. Leave it there, awake, for up to 5 minutes while Bermuda listens: this screen counts down and tells you at the end whether it worked. What it learns is shared by the whole house: every tracked device is matched against the rooms you teach.",
             "data": {
               "area": "The room {device} is in right now"
             }
+          },
+          "train_done": {
+            "title": "Teach Bermuda a room",
+            "description": "{outcome}"
           }
         },
         "abort": {
           "device_gone": "That device is no longer visible to Bermuda."
+        },
+        "progress": {
+          "learning": "Learning **{room}** with **{device}**. {samples} of {wanted} readings, about {left} left. Keep the phone where it is."
         }
       }
     }
