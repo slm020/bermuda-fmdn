@@ -38,6 +38,7 @@ UNHEARD = LOUDNESS_FLOOR
 # Capped low: past ~4 it just means "does not fit", and a bad fit must not cost a trained room more
 # than an untrained room that is clearly quieter.
 PATTERN_CAP = 4.0
+EMPTY_ROOM_PENALTY = 3.0  # the room's own presence sensors say nobody is there (see room_presence)
 UNTRAINED_PENALTY = 2.0  # what a room with no trained spots (or too few shared proxies) pays instead
 
 EVIDENCE_WEIGHT = 0.3  # how much one cycle of evidence moves the belief (cycles are ~1 s)
@@ -53,12 +54,14 @@ def room_evidence(
     scanner_areas: Mapping[str, str],
     pattern_scores: Mapping[str, float],
     candidate_areas: set[str],
+    empty_areas: set[str] | None = None,
 ) -> dict[str, float]:
     """
     Log-likelihood style score per room (0 = perfect, more negative = less likely).
 
     ``live_rssi``: scanner address -> raw RSSI now. ``scanner_areas``: scanner address -> its room.
     ``pattern_scores``: trained room -> fit score (only rooms that could be scored).
+    ``empty_areas``: rooms whose presence sensors say nobody is there.
     """
     loudest_by_area: dict[str, float] = {}
     for scanner, rssi in live_rssi.items():
@@ -75,7 +78,8 @@ def room_evidence(
         else:
             loud = UNHEARD
         pattern = -min(pattern_scores[area], PATTERN_CAP) if area in pattern_scores else -UNTRAINED_PENALTY
-        evidence[area] = loud + pattern
+        empty = -EMPTY_ROOM_PENALTY if empty_areas and area in empty_areas else 0.0
+        evidence[area] = loud + pattern + empty
     return evidence
 
 

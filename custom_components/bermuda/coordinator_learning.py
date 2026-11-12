@@ -51,6 +51,7 @@ from .room_learning import (
     device_live_rssi,
     match_rooms,
 )
+from .room_presence import RoomPresence
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -107,6 +108,8 @@ class BermudaLearningMixin:
         self._confidence: dict[str, ConfidenceTracker] = {}
         self._low_since: dict[str, float] = {}
         self._room_filters: dict[str, RoomFilter] = {}
+        self._room_presence = RoomPresence()
+        self._empty_areas: set[str] = set()
         self._train_prompts: set[str] = set()  # device keys with an open "train it?" prompt
         # device key -> monotonic time before which it is not prompted (it is training, or was just trained)
         self._prompt_quiet_until: dict[str, float] = {}
@@ -139,6 +142,7 @@ class BermudaLearningMixin:
             return
         now = monotonic_time_coarse()
         threshold = self._learning_threshold()
+        self._empty_areas = self._room_presence.empty_areas(self.hass, now)
         for device in self.devices.values():
             if not device.create_sensor or device.is_scanner:
                 continue
@@ -258,7 +262,7 @@ class BermudaLearningMixin:
         scanner_areas.update({a.scanner_address: a.area_id for a in device.adverts.values() if a.area_id})
         candidates = set(scanner_areas.values()) | set(rooms)
         pattern = dict(match_rooms(readings, rooms).scores) if rooms else {}
-        shown = room_filter.update(room_evidence(readings, scanner_areas, pattern, candidates))
+        shown = room_filter.update(room_evidence(readings, scanner_areas, pattern, candidates, self._empty_areas))
         if shown is None or shown == device.area_id:
             return
         in_room = [a.rssi_distance for a in device.adverts.values() if a.area_id == shown and a.rssi_distance]
