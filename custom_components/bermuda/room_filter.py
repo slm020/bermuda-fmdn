@@ -31,16 +31,21 @@ if TYPE_CHECKING:
 
 # Loudness: a room whose loudest proxy is this many dB behind the loudest proxy overall scores -1
 # (twice as far behind scores -4: squared, so near-ties barely matter and big gaps matter a lot).
-LOUDNESS_DB = 6.0
+LOUDNESS_DB = 5.0
 LOUDNESS_FLOOR = -6.0  # cap for rooms far behind, or not heard at all
 UNHEARD = LOUDNESS_FLOOR
 # Pattern: the trained-room fit score (mean squared z, ~0-1 is a good fit) counts against the room.
-PATTERN_CAP = 8.0
+# Capped low: past ~4 it just means "does not fit", and a bad fit must not cost a trained room more
+# than an untrained room that is clearly quieter.
+PATTERN_CAP = 4.0
 UNTRAINED_PENALTY = 2.0  # what a room with no trained spots (or too few shared proxies) pays instead
 
 EVIDENCE_WEIGHT = 0.3  # how much one cycle of evidence moves the belief (cycles are ~1 s)
 MOVE_CHANCE = 0.05  # per cycle chance the device moved: keeps every room reachable
 SHOW_BELIEF = 0.75  # a different room is shown only once believed this strongly
+# A proxy often misses a few of a quiet tag's adverts in a row; that is not evidence the tag left.
+# Its last reading is kept for this long before the proxy counts as not hearing the tag.
+MEMORY_SECONDS = 20.0
 
 
 def room_evidence(
@@ -80,6 +85,14 @@ class RoomFilter:
 
     belief: dict[str, float] = field(default_factory=dict)
     shown: str | None = None
+    recent: dict[str, tuple[float, float]] = field(default_factory=dict)  # scanner -> (when, rssi)
+
+    def remember(self, live_rssi: Mapping[str, float], now: float) -> dict[str, float]:
+        """Merge this cycle's readings with each proxy's last reading from the past MEMORY_SECONDS."""
+        for scanner, rssi in live_rssi.items():
+            self.recent[scanner] = (now, rssi)
+        self.recent = {s: (t, r) for s, (t, r) in self.recent.items() if now - t <= MEMORY_SECONDS}
+        return {s: r for s, (_t, r) in self.recent.items()}
 
     def update(self, evidence: Mapping[str, float]) -> str | None:
         """Fold one cycle of evidence into the belief and return the room to show (None = no opinion yet)."""
@@ -110,3 +123,4 @@ class RoomFilter:
         """Forget the belief (eg after the device has not been heard for a while)."""
         self.belief.clear()
         self.shown = None
+        self.recent.clear()

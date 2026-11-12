@@ -248,15 +248,17 @@ class BermudaLearningMixin:
         every proxy weakly and their distances all come out "about 2 m", so the nearest-proxy pick
         flips every few seconds; the filter does not.
         """
-        if not live:
-            if device.area_id is None:  # not heard at all any more: start afresh when it is
-                self._room_filters.pop(device.address, None)
+        room_filter = self._room_filters.setdefault(device.address, RoomFilter())
+        # The belief is kept while the device is unheard: when it is heard again the evidence moves
+        # it on within seconds, instead of falling back to the jumpy distance pick while it restarts.
+        readings = room_filter.remember(live, monotonic_time_coarse())
+        if not readings:
             return
-        scanner_areas = {a.scanner_address: a.area_id for a in device.adverts.values() if a.area_id}
-        candidates = {s.area_id for s in self._scanners if s.area_id} | set(scanner_areas.values()) | set(rooms)
-        pattern = dict(match_rooms(live, rooms).scores) if rooms else {}
-        evidence = room_evidence(live, scanner_areas, pattern, candidates)
-        shown = self._room_filters.setdefault(device.address, RoomFilter()).update(evidence)
+        scanner_areas = {s.address: s.area_id for s in self._scanners if s.area_id}
+        scanner_areas.update({a.scanner_address: a.area_id for a in device.adverts.values() if a.area_id})
+        candidates = set(scanner_areas.values()) | set(rooms)
+        pattern = dict(match_rooms(readings, rooms).scores) if rooms else {}
+        shown = room_filter.update(room_evidence(readings, scanner_areas, pattern, candidates))
         if shown is None or shown == device.area_id:
             return
         in_room = [a.rssi_distance for a in device.adverts.values() if a.area_id == shown and a.rssi_distance]

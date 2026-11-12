@@ -55,3 +55,16 @@ def test_unheard_rooms_and_empty_evidence():
     assert f.shown is None
     assert not f.belief
     assert room_evidence({}, AREAS, {}, {"bedroom"}) == {"bedroom": -8.0}
+
+
+def test_a_proxy_missing_a_few_adverts_still_counts():
+    f = RoomFilter()
+    sofa = {"lr": -78.0, "bed": -90.0, "din": -91.0, "bath": -95.0}
+    for t in range(30):
+        f.update(room_evidence(f.remember(sofa, float(t)), AREAS, {}, CANDIDATES))
+    # The living-room proxy hears nothing for 8 s, the far ones keep reading weakly.
+    for t in range(30, 38):
+        shown = f.update(room_evidence(f.remember({"bed": -97.0, "din": -90.0}, float(t)), AREAS, {}, CANDIDATES))
+        assert shown == "living_room"
+    # Gone for longer than the memory: the reading is dropped.
+    assert "lr" not in f.remember({}, 30 + 25.0)
