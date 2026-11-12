@@ -25,6 +25,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import slugify
 
 from .const import (
+    MOBILITY_STATIONARY,
     _LOGGER,
     CONF_LEARNING_ENABLED,
     CONF_LEARNING_SUSTAINED,
@@ -60,6 +61,24 @@ if TYPE_CHECKING:
 
     from . import BermudaConfigEntry
     from .bermuda_device import BermudaDevice
+
+
+# Seconds a trained-room match must persist before it takes over / is let go of. Tags and anything
+# marked stationary hear only a few weak, jittery adverts, so they get longer holds.
+ROOM_HOLD_ENTER_MOVING = 6.0
+ROOM_HOLD_LEAVE_MOVING = 10.0
+ROOM_HOLD_ENTER_STATIONARY = 20.0
+ROOM_HOLD_LEAVE_STATIONARY = 40.0
+
+
+@dataclass
+class _RoomHold:
+    """The trained room currently held for one device, and the room trying to replace it."""
+
+    area_id: str | None = None
+    candidate: str | None = None
+    candidate_since: float = 0.0
+    contrary_since: float = 0.0
 
 
 @dataclass
@@ -105,6 +124,7 @@ class BermudaLearningMixin:
         self.room_profiles = ProfileStore(hass)
         self._confidence: dict[str, ConfidenceTracker] = {}
         self._low_since: dict[str, float] = {}
+        self._room_holds: dict[str, _RoomHold] = {}
         self._train_prompts: set[str] = set()  # device keys with an open "train it?" prompt
         # device key -> monotonic time before which it is not prompted (it is training, or was just trained)
         self._prompt_quiet_until: dict[str, float] = {}
@@ -239,18 +259,51 @@ class BermudaLearningMixin:
 
     # --- applying trained rooms ---------------------------------------------
 
-    @staticmethod
     def _apply_trained_room(
-        device: BermudaDevice, live: Mapping[str, float], rooms: Mapping[str, Sequence[RoomProfile]]
+        self, device: BermudaDevice, live: Mapping[str, float], rooms: Mapping[str, Sequence[RoomProfile]]
     ) -> None:
-        """Override the distance-picked room when live readings clearly match a different trained room."""
+        """
+        Override the distance-picked room when live readings clearly match a trained room.
+
+        The match is held: a different trained room has to keep matching for a while before it
+        takes over, and the room in force survives short gaps or blips in either the match or the
+        distance pick. Weak, sparse signals (tags) otherwise make the answer flip every few seconds.
+        """
+        now = monotonic_time_coarse()
         match = match_rooms(live, rooms)
-        if match.area_id is None or match.area_id == device.area_id:
+        hold = self._room_holds.setdefault(device.address, _RoomHold())
+        stationary = device.get_mobility_type() == MOBILITY_STATIONARY
+        enter = ROOM_HOLD_ENTER_STATIONARY if stationary else ROOM_HOLD_ENTER_MOVING
+        leave = ROOM_HOLD_LEAVE_STATIONARY if stationary else ROOM_HOLD_LEAVE_MOVING
+
+        if match.area_id is not None:
+            if match.area_id == hold.area_id:
+                hold.contrary_since = 0.0
+            elif hold.area_id is None:
+                if hold.candidate != match.area_id:
+                    hold.candidate, hold.candidate_since = match.area_id, now
+                if now - hold.candidate_since >= enter or match.area_id == device.area_id:
+                    hold.area_id, hold.candidate, hold.contrary_since = match.area_id, None, 0.0
+            else:
+                # Another trained room matches while one is held: switch only after it persists.
+                if hold.candidate != match.area_id:
+                    hold.candidate, hold.candidate_since = match.area_id, now
+                if now - hold.candidate_since >= enter:
+                    hold.area_id, hold.candidate, hold.contrary_since = match.area_id, None, 0.0
+        else:
+            hold.candidate = None
+            if hold.area_id is not None:
+                hold.contrary_since = hold.contrary_since or now
+                if now - hold.contrary_since >= leave:
+                    hold.area_id = None
+                    hold.contrary_since = 0.0
+
+        if hold.area_id is None or hold.area_id == device.area_id:
             return
-        in_room = [a.rssi_distance for a in device.adverts.values() if a.area_id == match.area_id and a.rssi_distance]
+        in_room = [a.rssi_distance for a in device.adverts.values() if a.area_id == hold.area_id and a.rssi_distance]
         distance = min(in_room) if in_room else (device.area_distance or 0.0)
-        _LOGGER.debug("Trained room match moved %s %s -> %s", device.name, device.area_name, match.area_id)
-        device.apply_area_override(match.area_id, distance)
+        _LOGGER.debug("Trained room hold moved %s %s -> %s", device.name, device.area_name, hold.area_id)
+        device.apply_area_override(hold.area_id, distance)
 
     # --- training -----------------------------------------------------------
 

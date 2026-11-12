@@ -34,6 +34,11 @@ from custom_components.bermuda.const import (
     REPAIR_TRAIN_PREFIX,
     SIGNAL_DEVICE_NEW,
 )
+from custom_components.bermuda.coordinator_learning import (
+    ROOM_HOLD_ENTER_MOVING,
+    ROOM_HOLD_ENTER_STATIONARY,
+    ROOM_HOLD_LEAVE_MOVING,
+)
 from custom_components.bermuda.repairs import async_create_fix_flow
 from custom_components.bermuda.room_learning import (
     MAX_SPOTS_PER_ROOM,
@@ -747,7 +752,10 @@ async def test_rooms_taught_by_one_device_are_used_for_another_and_a_quiet_one(h
         wrong = hall if expected is kitchen else kitchen
         tag.area_id = wrong.id
         coordinator._refresh_learning()  # noqa: SLF001
+        clock.now += ROOM_HOLD_ENTER_MOVING + 1  # a trained room must keep matching before it takes over
+        coordinator._refresh_learning()  # noqa: SLF001
         assert tag.area_id == expected.id
+        clock.now += ROOM_HOLD_LEAVE_MOVING + 1
 
 
 async def test_training_adds_spots_and_replace_starts_the_room_over(hass, setup_bermuda_entry, clock):
@@ -1079,3 +1087,24 @@ async def test_refresh_is_inert_until_profiles_have_loaded(hass, setup_bermuda_e
     coordinator.room_profiles.loaded = False
     _cycle(coordinator, keys, kitchen.id)
     assert coordinator._confidence == {}  # noqa: SLF001
+
+
+async def test_trained_room_is_held_through_blips_and_slow_to_change(hass, setup_bermuda_entry, clock):
+    coordinator, keys, s1, s2, kitchen, hall = await _trained_keys(hass, setup_bermuda_entry, clock)
+    tag = _make_tracked_device(coordinator, "ec:00:00:00:00:03", "Sofa tag")
+    tag.set_mobility_type("stationary")
+
+    def step(rssi1, rssi2, seconds, area):
+        clock.now += seconds
+        _hear(tag, s1, s2, rssi1, rssi2, d1=1.0, d2=1.1, stamp=900.0)
+        tag.area_id = area.id  # what the distance pick says this cycle
+        coordinator._refresh_learning()  # noqa: SLF001
+
+    step(-62, -87, 0, hall)
+    assert tag.area_id == hall.id  # kitchen matches, but not for long enough yet
+    step(-62, -87, ROOM_HOLD_ENTER_STATIONARY + 1, hall)
+    assert tag.area_id == kitchen.id  # held now
+    step(-87, -62, 3, kitchen)  # a few seconds of hall-looking readings: no change
+    assert tag.area_id == kitchen.id
+    step(-62, -87, 2, hall)  # distance pick blips to hall while kitchen still matches
+    assert tag.area_id == kitchen.id
