@@ -66,9 +66,9 @@ if TYPE_CHECKING:
 # Seconds a trained-room match must persist before it takes over / is let go of. Tags and anything
 # marked stationary hear only a few weak, jittery adverts, so they get longer holds.
 ROOM_HOLD_ENTER_MOVING = 6.0
-ROOM_HOLD_LEAVE_MOVING = 10.0
+ROOM_HOLD_LEAVE_MOVING = 20.0
 ROOM_HOLD_ENTER_STATIONARY = 20.0
-ROOM_HOLD_LEAVE_STATIONARY = 40.0
+ROOM_HOLD_LEAVE_STATIONARY = 180.0
 
 
 @dataclass
