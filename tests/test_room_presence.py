@@ -59,3 +59,12 @@ def test_an_empty_room_loses_a_near_tie_through_the_wall():
             room_evidence(live, areas, {"living_room": 1.5, "bathroom": 1.0}, set(areas.values()), {"bathroom"})
         )
     assert shown == "living_room"
+
+
+def test_a_dog_the_radar_misses_still_shows_where_the_radio_says():
+    areas = {"lr": "living_room", "kit": "kitchen"}
+    f = RoomFilter()
+    live = {"lr": -90.0, "kit": -85.0}  # clearly nearer the kitchen proxy, but the kitchen radar sees nobody
+    for _ in range(30):
+        shown = f.update(room_evidence(live, areas, {"living_room": 3.0}, set(areas.values()), {"kitchen"}))
+    assert shown == "kitchen"

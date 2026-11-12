@@ -38,7 +38,7 @@ UNHEARD = LOUDNESS_FLOOR
 # Capped low: past ~4 it just means "does not fit", and a bad fit must not cost a trained room more
 # than an untrained room that is clearly quieter.
 PATTERN_CAP = 4.0
-EMPTY_ROOM_PENALTY = 3.0  # the room's own presence sensors say nobody is there (see room_presence)
+EMPTY_ROOM_PENALTY = 1.0  # presence sensors say nobody is there: a tie-breaker only, as radars can miss a dog
 UNTRAINED_PENALTY = 2.0  # what a room with no trained spots (or too few shared proxies) pays instead
 
 EVIDENCE_WEIGHT = 0.3  # how much one cycle of evidence moves the belief (cycles are ~1 s)
