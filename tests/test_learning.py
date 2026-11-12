@@ -34,11 +34,6 @@ from custom_components.bermuda.const import (
     REPAIR_TRAIN_PREFIX,
     SIGNAL_DEVICE_NEW,
 )
-from custom_components.bermuda.coordinator_learning import (
-    ROOM_HOLD_ENTER_MOVING,
-    ROOM_HOLD_ENTER_STATIONARY,
-    ROOM_HOLD_LEAVE_MOVING,
-)
 from custom_components.bermuda.repairs import async_create_fix_flow
 from custom_components.bermuda.room_learning import (
     MAX_SPOTS_PER_ROOM,
@@ -726,7 +721,7 @@ async def test_trained_device_is_not_prompted_and_unmatched_readings_change_noth
     _flap(coordinator, keys, clock, kitchen.id, hall.id, seconds=900)
     assert _issue(hass, keys) is None
     _dwell(coordinator, keys, clock, kitchen.id, 1)
-    assert keys.area_id == kitchen.id  # untouched by the matcher
+    assert keys.area_id == hall.id  # no trained room fits, but the hall proxy is 50 dB louder
 
     # Readings that look like the Hall while the answer is already Hall: nothing to override.
     _hear(keys, s1, s2, -75, -50, d1=2.0, d2=2.1, stamp=901.0)
@@ -750,12 +745,10 @@ async def test_rooms_taught_by_one_device_are_used_for_another_and_a_quiet_one(h
     for rssi1, rssi2, expected in ((-62, -87, kitchen), (-87, -62, hall)):  # both 12 dB quieter than the teacher
         _hear(tag, s1, s2, rssi1, rssi2, d1=1.0, d2=1.1, stamp=900.0)
         wrong = hall if expected is kitchen else kitchen
-        tag.area_id = wrong.id
-        coordinator._refresh_learning()  # noqa: SLF001
-        clock.now += ROOM_HOLD_ENTER_MOVING + 1  # a trained room must keep matching before it takes over
-        coordinator._refresh_learning()  # noqa: SLF001
+        for _ in range(15):  # evidence builds up over a few cycles
+            tag.area_id = wrong.id  # what the distance pick keeps saying
+            coordinator._refresh_learning()  # noqa: SLF001
         assert tag.area_id == expected.id
-        clock.now += ROOM_HOLD_LEAVE_MOVING + 1
 
 
 async def test_training_adds_spots_and_replace_starts_the_room_over(hass, setup_bermuda_entry, clock):
@@ -1089,22 +1082,20 @@ async def test_refresh_is_inert_until_profiles_have_loaded(hass, setup_bermuda_e
     assert coordinator._confidence == {}  # noqa: SLF001
 
 
-async def test_trained_room_is_held_through_blips_and_slow_to_change(hass, setup_bermuda_entry, clock):
-    coordinator, keys, s1, s2, kitchen, hall = await _trained_keys(hass, setup_bermuda_entry, clock)
-    tag = _make_tracked_device(coordinator, "ec:00:00:00:00:03", "Sofa tag")
-    tag.set_mobility_type("stationary")
+async def test_room_is_held_through_blips_and_follows_a_real_move(hass, setup_bermuda_entry, clock):
+    coordinator, _keys, s1, s2, kitchen, hall = await _trained_keys(hass, setup_bermuda_entry, clock)
+    tag = _make_tracked_device(coordinator, "ec:00:00:00:00:03", "Collar tag")
 
-    def step(rssi1, rssi2, seconds, area):
-        clock.now += seconds
-        _hear(tag, s1, s2, rssi1, rssi2, d1=1.0, d2=1.1, stamp=900.0)
-        tag.area_id = area.id  # what the distance pick says this cycle
-        coordinator._refresh_learning()  # noqa: SLF001
+    def cycles(n, rssi1, rssi2, picked):
+        for _ in range(n):
+            clock.now += 1
+            _hear(tag, s1, s2, rssi1, rssi2, d1=1.0, d2=1.1, stamp=900.0)
+            tag.area_id = picked.id  # what the distance pick says this cycle
+            coordinator._refresh_learning()  # noqa: SLF001
 
-    step(-62, -87, 0, hall)
-    assert tag.area_id == hall.id  # kitchen matches, but not for long enough yet
-    step(-62, -87, ROOM_HOLD_ENTER_STATIONARY + 1, hall)
-    assert tag.area_id == kitchen.id  # held now
-    step(-87, -62, 3, kitchen)  # a few seconds of hall-looking readings: no change
+    cycles(15, -62, -87, hall)
+    assert tag.area_id == kitchen.id  # the readings say kitchen, whatever the distance pick says
+    cycles(4, -76, -72, hall)  # lying on the tag: a few seconds where the hall proxy is a bit louder
     assert tag.area_id == kitchen.id
-    step(-62, -87, 2, hall)  # distance pick blips to hall while kitchen still matches
-    assert tag.area_id == kitchen.id
+    cycles(15, -87, -62, kitchen)  # it really went to the hall
+    assert tag.area_id == hall.id
